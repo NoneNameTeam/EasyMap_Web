@@ -1,184 +1,349 @@
 <template>
   <div class="admin-dashboard">
-    <div class="sidebar">
+    <!-- 侧边栏 -->
+    <el-aside width="260px" class="sidebar">
       <div class="logo">
-        <h2>管理者控制台</h2>
+        <el-icon :size="32" color="#fff"><Monitor /></el-icon>
+        <h2>管理控制台</h2>
       </div>
-      <nav class="nav-menu">
-        <div 
-          class="nav-item" 
-          :class="{ active: currentTab === 'overview' }" 
-          @click="switchTab('overview')"
-        >
-          数据总览
-        </div>
-        <!-- <div class="nav-item">车辆管理</div>
-        <div class="nav-item">运载管理</div> -->
-        <div 
-          class="nav-item" 
-          :class="{ active: currentTab === 'settings' }" 
-          @click="switchTab('settings')"
-        >
-          系统设置
-        </div>
-      </nav>
-      <button class="back-btn" @click="goBack">返回首页</button>
-    </div>
 
-    <div class="main-content">
-      <header class="top-bar">
+      <el-menu
+        :default-active="currentTab"
+        class="sidebar-menu"
+        background-color="transparent"
+        text-color="#fff"
+        active-text-color="#FFFBDD"
+        @select="switchTab"
+      >
+        <el-menu-item index="overview">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>数据总览</span>
+        </el-menu-item>
+        <el-menu-item index="settings">
+          <el-icon><Setting /></el-icon>
+          <span>系统设置</span>
+        </el-menu-item>
+      </el-menu>
+
+      <div class="sidebar-footer">
+        <el-button type="info" plain @click="goBack" class="back-btn">
+          <el-icon><Back /></el-icon>
+          返回首页
+        </el-button>
+      </div>
+    </el-aside>
+
+    <!-- 主内容区 -->
+    <el-container class="main-container">
+      <!-- 顶部栏 -->
+      <el-header height="70px" class="top-bar">
         <h1>管理者仪表盘</h1>
-        <div class="user-info">管理员</div>
-      </header>
+        <el-dropdown>
+          <div class="user-info">
+            <el-avatar :size="35" style="background: #67B3DB; margin-right: 10px;">
+              <el-icon><User /></el-icon>
+            </el-avatar>
+            <span>管理员</span>
+            <el-icon class="ml-1"><ArrowDown /></el-icon>
+          </div>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item>
+                <el-icon><User /></el-icon>
+                个人信息
+              </el-dropdown-item>
+              <el-dropdown-item divided @click="goBack">
+                <el-icon><SwitchButton /></el-icon>
+                退出登录
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </el-header>
 
-      <div class="content-area">
-        <!-- 数据总览 - 包含地图 -->
+      <!-- 内容区域 -->
+      <el-main class="content-area">
+        <!-- 数据总览 -->
         <div v-if="currentTab === 'overview'" class="overview-section">
+          <!-- 标题和控制按钮 -->
           <div class="section-header">
-            <h2>交通实时监控</h2>
-            <div class="map-controls">
-              <button @click="showDebug = !showDebug" class="control-btn">
+            <h2>
+              <el-icon><Location /></el-icon>
+              交通实时监控
+            </h2>
+            <el-space wrap>
+              <el-button 
+                :type="showDebug ? 'success' : 'info'" 
+                @click="showDebug = !showDebug"
+                :icon="showDebug ? View : Hide"
+              >
                 {{ showDebug ? '隐藏' : '显示' }}坐标
-              </button>
-              <button @click="resetMap" class="control-btn">
+              </el-button>
+              <el-button type="primary" @click="simulateVehicleMovement" :icon="Refresh">
+                移动车辆
+              </el-button>
+              <el-button type="success" @click="startRealtimeUpdate" :icon="VideoPlay">
+                开始更新
+              </el-button>
+              <el-button type="danger" @click="stopRealtimeUpdate" :icon="VideoPause">
+                停止更新
+              </el-button>
+              <el-button @click="resetMap" :icon="RefreshLeft">
                 重置地图
-              </button>
-            </div>
+              </el-button>
+            </el-space>
           </div>
 
           <!-- 图例 -->
-          <div class="legend">
-            <div class="legend-title">图例:</div>
-            <div class="legend-item">
-              <span class="legend-color" style="background: #27ae60; opacity: 0.4;"></span>
-              <span>畅通</span>
+          <el-card shadow="never" class="legend-card">
+            <template #header>
+              <span><el-icon><Grid /></el-icon> 图例说明</span>
+            </template>
+            <div class="legend">
+              <el-tag type="success" effect="plain">
+                <span class="legend-dot" style="background: #27ae60;"></span>
+                畅通
+              </el-tag>
+              <el-tag type="info" effect="plain">
+                <span class="legend-dot" style="background: #95a5a6;"></span>
+                正常
+              </el-tag>
+              <el-tag type="danger" effect="plain">
+                <span class="legend-dot" style="background: #e74c3c;"></span>
+                拥堵
+              </el-tag>
+              <el-tag type="warning" effect="plain">
+                <span class="legend-dot" style="background: #e67e22;"></span>
+                事故
+              </el-tag>
+              <el-tag color="#f39c12" effect="plain">
+                <span class="legend-dot" style="background: #f39c12;"></span>
+                施工
+              </el-tag>
+              <el-tag color="#34495e" effect="plain">
+                <span class="legend-dot" style="background: #34495e;"></span>
+                建筑
+              </el-tag>
             </div>
-            <div class="legend-item">
-              <span class="legend-color" style="background: #95a5a6; opacity: 0.3;"></span>
-              <span>正常</span>
-            </div>
-            <div class="legend-item">
-              <span class="legend-color" style="background: #e74c3c; opacity: 0.5;"></span>
-              <span>拥堵</span>
-            </div>
-            <div class="legend-item">
-              <span class="legend-color" style="background: #e67e22; opacity: 0.7;"></span>
-              <span>事故</span>
-            </div>
-            <div class="legend-item">
-              <span class="legend-color" style="background: #f39c12; opacity: 0.6;"></span>
-              <span>施工</span>
-            </div>
-            <div class="legend-item">
-              <span class="legend-color" style="background: #34495e; opacity: 0.8;"></span>
-              <span>建筑</span>
-            </div>
-          </div>
+          </el-card>
 
           <!-- 地图容器 -->
-          <div class="map-wrapper">
-            <MapContainer
-              :width="mapWidth"
-              :height="mapHeight"
-              :block-size="blockSize"
-              :blocks="mapBlocks"
-              :show-debug="showDebug"
-              @block-click="handleBlockClick"
-              @block-hover="handleBlockHover"
-            />
-          </div>
+          <el-card shadow="hover" class="map-card">
+            <div class="map-wrapper">
+              <MapContainer
+                :width="mapWidth"
+                :height="mapHeight"
+                :block-size="blockSize"
+                :blocks="mapBlocks"
+                :vehicles="vehicles"
+                :show-debug="showDebug"
+                @block-click="handleBlockClick"
+                @block-hover="handleBlockHover"
+                @vehicle-click="handleVehicleClick"
+                @vehicle-position-update="handleVehiclePositionUpdate"
+              />
+            </div>
+          </el-card>
 
-          <!-- 统计信息 -->
-          <div class="stats-grid">
-            <div class="stat-card">
-              <div class="stat-icon">🚗</div>
-              <div class="stat-info">
-                <h3>畅通路段</h3>
-                <p class="stat-number">{{ trafficStats.smooth }}</p>
-              </div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-icon">🟡</div>
-              <div class="stat-info">
-                <h3>正常路段</h3>
-                <p class="stat-number">{{ trafficStats.normal }}</p>
-              </div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-icon">🔴</div>
-              <div class="stat-info">
-                <h3>拥堵路段</h3>
-                <p class="stat-number">{{ trafficStats.congested }}</p>
-              </div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-icon">⚠️</div>
-              <div class="stat-info">
-                <h3>事故/施工</h3>
-                <p class="stat-number">{{ trafficStats.accident + trafficStats.construction }}</p>
-              </div>
-            </div>
-          </div>
+          <!-- 统计卡片 -->
+          <el-row :gutter="20" class="stats-row">
+            <el-col :xs="24" :sm="12" :md="6">
+              <el-card shadow="hover" class="stat-card smooth-card">
+                <el-statistic title="畅通路段" :value="trafficStats.smooth">
+                  <template #prefix>
+                    <el-icon color="#27ae60"><Promotion /></el-icon>
+                  </template>
+                </el-statistic>
+              </el-card>
+            </el-col>
+            <el-col :xs="24" :sm="12" :md="6">
+              <el-card shadow="hover" class="stat-card normal-card">
+                <el-statistic title="正常路段" :value="trafficStats.normal">
+                  <template #prefix>
+                    <el-icon color="#3498db"><Location /></el-icon>
+                  </template>
+                </el-statistic>
+              </el-card>
+            </el-col>
+            <el-col :xs="24" :sm="12" :md="6">
+              <el-card shadow="hover" class="stat-card congested-card">
+                <el-statistic title="拥堵路段" :value="trafficStats.congested">
+                  <template #prefix>
+                    <el-icon color="#e74c3c"><WarningFilled /></el-icon>
+                  </template>
+                </el-statistic>
+              </el-card>
+            </el-col>
+            <el-col :xs="24" :sm="12" :md="6">
+              <el-card shadow="hover" class="stat-card alert-card">
+                <el-statistic 
+                  title="事故/施工" 
+                  :value="trafficStats.accident + trafficStats.construction"
+                >
+                  <template #prefix>
+                    <el-icon color="#e67e22"><Warning /></el-icon>
+                  </template>
+                </el-statistic>
+              </el-card>
+            </el-col>
+          </el-row>
+
+          <!-- 在线车辆统计 -->
+          <el-row :gutter="20">
+            <el-col :span="24">
+              <el-card shadow="hover" class="vehicle-stat-card">
+                <el-statistic title="在线车辆" :value="vehicles.length">
+                  <template #prefix>
+                    <el-icon color="#67B3DB" :size="24"><Van /></el-icon>
+                  </template>
+                  <template #suffix>
+                    <span style="font-size: 16px; color: #999;">辆</span>
+                  </template>
+                </el-statistic>
+              </el-card>
+            </el-col>
+          </el-row>
         </div>
 
         <!-- 系统设置 -->
         <div v-if="currentTab === 'settings'" class="settings-section">
-          <h2>系统设置</h2>
-          <div class="settings-content">
-            <div class="setting-group">
-              <h3>地图配置</h3>
-              <div class="setting-item">
-                <label>地图宽度（块）:</label>
-                <input v-model.number="mapWidth" type="number" min="10" max="30" />
+          <el-card shadow="never">
+            <template #header>
+              <div class="card-header">
+                <span><el-icon><Setting /></el-icon> 地图配置</span>
               </div>
-              <div class="setting-item">
-                <label>地图高度（块）:</label>
-                <input v-model.number="mapHeight" type="number" min="10" max="30" />
-              </div>
-              <div class="setting-item">
-                <label>块大小（像素）:</label>
-                <input v-model.number="blockSize" type="number" min="30" max="100" step="10" />
-              </div>
-              <button @click="applySettings" class="apply-btn">应用设置</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+            </template>
 
-    <!-- 点击信息弹窗 -->
-    <div v-if="selectedBlock" class="modal-overlay" @click="selectedBlock = null">
-      <div class="modal-content" @click.stop>
-        <h3>区域详细信息</h3>
-        <div class="modal-body">
-          <p><strong>类型:</strong> {{ getBlockTypeName(selectedBlock.type) }}</p>
-          <p><strong>坐标:</strong> ({{ selectedBlock.x }}, {{ selectedBlock.y }})</p>
-          <p v-if="selectedBlock.data.name">
-            <strong>名称:</strong> {{ selectedBlock.data.name }}
-          </p>
-          <p v-if="selectedBlock.data.speed !== undefined">
-            <strong>通行速度:</strong> {{ selectedBlock.data.speed }} km/h
-          </p>
-          <p v-if="selectedBlock.type === 'congested'">
-            <strong>状态:</strong> <span style="color: #e74c3c;">拥堵中</span>
-          </p>
-          <p v-if="selectedBlock.type === 'accident'">
-            <strong>状态:</strong> <span style="color: #e67e22;">发生事故</span>
-          </p>
-          <p v-if="selectedBlock.type === 'construction'">
-            <strong>状态:</strong> <span style="color: #f39c12;">施工中</span>
-          </p>
+            <el-form label-width="150px" label-position="left">
+              <el-form-item label="地图宽度（块）">
+                <el-input-number 
+                  v-model="mapWidth" 
+                  :min="10" 
+                  :max="30" 
+                  controls-position="right"
+                />
+              </el-form-item>
+              
+              <el-form-item label="地图高度（块）">
+                <el-input-number 
+                  v-model="mapHeight" 
+                  :min="10" 
+                  :max="30" 
+                  controls-position="right"
+                />
+              </el-form-item>
+              
+              <el-form-item label="块大小（像素）">
+                <el-input-number 
+                  v-model="blockSize" 
+                  :min="30" 
+                  :max="100" 
+                  :step="10"
+                  controls-position="right"
+                />
+              </el-form-item>
+
+              <el-form-item>
+                <el-button type="primary" @click="applySettings" :icon="Check">
+                  应用设置
+                </el-button>
+                <el-button @click="resetSettings" :icon="RefreshLeft">
+                  恢复默认
+                </el-button>
+              </el-form-item>
+            </el-form>
+          </el-card>
         </div>
-        <button @click="selectedBlock = null" class="close-btn">关闭</button>
-      </div>
-    </div>
+      </el-main>
+    </el-container>
+
+    <!-- 区域信息弹窗 -->
+    <el-dialog 
+      v-model="showBlockDialog" 
+      title="区域详细信息" 
+      width="500px"
+      :close-on-click-modal="true"
+    >
+      <el-descriptions :column="1" border v-if="selectedBlock">
+        <el-descriptions-item label="区域类型">
+          <el-tag :type="getBlockTagType(selectedBlock.type)">
+            {{ getBlockTypeName(selectedBlock.type) }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="坐标位置">
+          ({{ selectedBlock.x }}, {{ selectedBlock.y }})
+        </el-descriptions-item>
+        <el-descriptions-item label="区域名称" v-if="selectedBlock.data?.name">
+          {{ selectedBlock.data.name }}
+        </el-descriptions-item>
+        <el-descriptions-item label="通行速度" v-if="selectedBlock.data?.speed !== undefined">
+          <el-tag type="info">{{ selectedBlock.data.speed }} km/h</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="状态" v-if="selectedBlock.type === 'congested'">
+          <el-tag type="danger" effect="dark">拥堵中</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="状态" v-if="selectedBlock.type === 'accident'">
+          <el-tag type="warning" effect="dark">发生事故</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="状态" v-if="selectedBlock.type === 'construction'">
+          <el-tag color="#f39c12" effect="dark">施工中</el-tag>
+        </el-descriptions-item>
+      </el-descriptions>
+      
+      <template #footer>
+        <el-button type="primary" @click="showBlockDialog = false">
+          确定
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 车辆信息弹窗 -->
+    <el-dialog 
+      v-model="showVehicleDialog" 
+      title="车辆详细信息" 
+      width="500px"
+    >
+      <el-descriptions :column="2" border v-if="selectedVehicle">
+        <el-descriptions-item label="车牌号" :span="2">
+          <el-tag type="primary" size="large">{{ selectedVehicle.plateNumber }}</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="车辆类型">
+          {{ getVehicleTypeName(selectedVehicle.type) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="当前速度">
+          <el-tag :type="getSpeedTagType(selectedVehicle.speed)">
+            {{ selectedVehicle.speed }} km/h
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="位置坐标" :span="2">
+          ({{ selectedVehicle.x }}, {{ selectedVehicle.y }})
+        </el-descriptions-item>
+        <el-descriptions-item label="行驶方向" :span="2">
+          {{ getDirectionName(selectedVehicle.direction) }}
+        </el-descriptions-item>
+      </el-descriptions>
+      
+      <template #footer>
+        <el-button @click="showVehicleDialog = false">取消</el-button>
+        <el-button type="primary" @click="showVehicleDialog = false">
+          确定
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import {
+  Monitor, DataAnalysis, Setting, Back, User, ArrowDown, SwitchButton,
+  Location, View, Hide, Refresh, VideoPlay, VideoPause, RefreshLeft,
+  Grid, Promotion, WarningFilled, Warning, Van, Check
+} from '@element-plus/icons-vue'
 import MapContainer from '../components/map/MapContainer.vue'
+// import vehicleApi from '../api/vehicle'
 
 const router = useRouter()
 
@@ -194,8 +359,17 @@ const showDebug = ref(false)
 // 地图块数据
 const mapBlocks = ref([])
 
-// 选中的块
+// 车辆数据
+const vehicles = ref([])
+
+// 选中的块和车辆
 const selectedBlock = ref(null)
+const selectedVehicle = ref(null)
+const showBlockDialog = ref(false)
+const showVehicleDialog = ref(false)
+
+// 定时器
+let updateTimer = null
 
 // 切换标签
 const switchTab = (tab) => {
@@ -204,74 +378,156 @@ const switchTab = (tab) => {
 
 // 返回首页
 const goBack = () => {
+  ElMessage.success('已退出登录')
   router.push('/')
 }
 
-// 初始化地图
+// 初始化地图 - 空白地图
 const initMap = () => {
-  const blocks = []
-  
-  // 创建初始地图布局
-  for (let y = 0; y < mapHeight.value; y++) {
-    for (let x = 0; x < mapWidth.value; x++) {
-      let type = 'empty'
-      let data = {}
-      
-      // // 建筑物区域（四个角落）
-      // if ((x < 3 || x > 16) && (y < 3 || y > 11)) {
-      //   type = 'building'
-      //   data = { name: `建筑物 ${x}-${y}` }
-      // }
-      // // 主要道路 - 横向
-      // else if (x >= 5 && x <= 14 && (y === 7 || y === 8)) {
-      //   type = 'normal'
-      //   data = { name: '东西主干道', speed: 60 }
-      // }
-      // // 主要道路 - 纵向
-      // else if (y >= 5 && y <= 10 && (x === 9 || x === 10)) {
-      //   type = 'normal'
-      //   data = { name: '南北主干道', speed: 60 }
-      // }
-      // // 次要道路 - 横向
-      // else if (x >= 3 && x <= 16 && (y === 4 || y === 11)) {
-      //   type = 'normal'
-      //   data = { name: '次干道', speed: 40 }
-      // }
-      // // 次要道路 - 纵向
-      // else if (y >= 3 && y <= 12 && (x === 5 || x === 14)) {
-      //   type = 'normal'
-      //   data = { name: '次干道', speed: 40 }
-      // }
-      
-      if (type !== 'empty') {
-        blocks.push({ x, y, type, data })
+  mapBlocks.value = []
+}
+
+// 模拟车辆移动
+const simulateVehicleMovement = () => {
+  if (vehicles.value.length === 0) {
+    vehicles.value = [
+      {
+        id: 1,
+        plateNumber: '粤A12345',
+        x: 5,
+        y: 7,
+        offsetX: 0,
+        offsetY: 0,
+        speed: 60,
+        direction: 0,
+        type: 'car',
+        showTrail: true,
+        transitionDuration: 1000
+      },
+      {
+        id: 2,
+        plateNumber: '粤B67890',
+        x: 10,
+        y: 8,
+        offsetX: 0,
+        offsetY: 0,
+        speed: 45,
+        direction: 90,
+        type: 'truck',
+        showTrail: true,
+        transitionDuration: 1000
+      },
+      {
+        id: 3,
+        plateNumber: '粤C11111',
+        x: 8,
+        y: 5,
+        offsetX: 0,
+        offsetY: 0,
+        speed: 50,
+        direction: 180,
+        type: 'bus',
+        showTrail: true,
+        transitionDuration: 1000
       }
-    }
+    ]
+    ElMessage.success('已添加测试车辆')
+  } else {
+    vehicles.value = vehicles.value.map(vehicle => {
+      const directions = [
+        { dx: 1, dy: 0, angle: 90 },
+        { dx: -1, dy: 0, angle: 270 },
+        { dx: 0, dy: 1, angle: 180 },
+        { dx: 0, dy: -1, angle: 0 }
+      ]
+      
+      const move = directions[Math.floor(Math.random() * directions.length)]
+      
+      let newX = vehicle.x + move.dx
+      let newY = vehicle.y + move.dy
+      
+      newX = Math.max(0, Math.min(mapWidth.value - 1, newX))
+      newY = Math.max(0, Math.min(mapHeight.value - 1, newY))
+      
+      return {
+        ...vehicle,
+        x: newX,
+        y: newY,
+        direction: move.angle,
+        speed: Math.floor(Math.random() * 40) + 40
+      }
+    })
+    ElMessage.info('车辆已移动')
+  }
+}
+
+// 开始实时更新
+const startRealtimeUpdate = () => {
+  if (updateTimer) {
+    ElMessage.warning('已在自动更新中')
+    return
   }
   
-  mapBlocks.value = blocks
+  updateTimer = setInterval(() => {
+    simulateVehicleMovement()
+  }, 2000)
+  
+  ElMessage.success('开始自动更新')
+}
+
+// 停止实时更新
+const stopRealtimeUpdate = () => {
+  if (updateTimer) {
+    clearInterval(updateTimer)
+    updateTimer = null
+    ElMessage.info('已停止自动更新')
+  } else {
+    ElMessage.warning('当前未在自动更新')
+  }
 }
 
 // 重置地图
 const resetMap = () => {
   initMap()
-  selectedBlock.value = null
+  vehicles.value = []
+  stopRealtimeUpdate()
+  ElMessage.success('地图已重置')
 }
 
 // 应用设置
 const applySettings = () => {
   initMap()
-  alert('设置已应用')
+  ElMessage.success('设置已应用')
+}
+
+// 恢复默认设置
+const resetSettings = () => {
+  mapWidth.value = 20
+  mapHeight.value = 15
+  blockSize.value = 50
+  ElMessage.success('已恢复默认设置')
 }
 
 // 块点击处理
 const handleBlockClick = (blockInfo) => {
   selectedBlock.value = blockInfo
+  showBlockDialog.value = true
 }
 
 // 块悬停处理
 const handleBlockHover = (blockInfo) => {
   // console.log('悬停:', blockInfo)
+}
+
+// 车辆点击处理
+const handleVehicleClick = (vehicleInfo) => {
+  selectedVehicle.value = vehicleInfo
+  showVehicleDialog.value = true
+}
+
+// 车辆位置更新处理
+const handleVehiclePositionUpdate = (positionInfo) => {
+  console.log('车辆位置更新:', positionInfo)
 }
 
 // 获取块类型名称
@@ -286,6 +542,49 @@ const getBlockTypeName = (type) => {
     construction: '施工区域'
   }
   return names[type] || type
+}
+
+// 获取块标签类型
+const getBlockTagType = (type) => {
+  const types = {
+    smooth: 'success',
+    normal: 'info',
+    congested: 'danger',
+    accident: 'warning',
+    construction: 'warning',
+    building: ''
+  }
+  return types[type] || 'info'
+}
+
+// 获取车辆类型名称
+const getVehicleTypeName = (type) => {
+  const names = {
+    car: '小汽车',
+    truck: '货车',
+    bus: '公交车'
+  }
+  return names[type] || type
+}
+
+// 获取速度标签类型
+const getSpeedTagType = (speed) => {
+  if (speed >= 60) return 'success'
+  if (speed >= 40) return 'warning'
+  return 'danger'
+}
+
+// 获取方向名称
+const getDirectionName = (direction) => {
+  if (direction >= 337.5 || direction < 22.5) return '北 ↑'
+  if (direction >= 22.5 && direction < 67.5) return '东北 ↗'
+  if (direction >= 67.5 && direction < 112.5) return '东 →'
+  if (direction >= 112.5 && direction < 157.5) return '东南 ↘'
+  if (direction >= 157.5 && direction < 202.5) return '南 ↓'
+  if (direction >= 202.5 && direction < 247.5) return '西南 ↙'
+  if (direction >= 247.5 && direction < 292.5) return '西 ←'
+  if (direction >= 292.5 && direction < 337.5) return '西北 ↖'
+  return '未知'
 }
 
 // 计算交通统计
@@ -311,6 +610,12 @@ const trafficStats = computed(() => {
 // 页面加载时初始化
 onMounted(() => {
   initMap()
+  ElMessage.success('欢迎使用管理者控制台')
+})
+
+// 页面卸载时清理
+onUnmounted(() => {
+  stopRealtimeUpdate()
 })
 </script>
 
@@ -319,79 +624,114 @@ onMounted(() => {
   display: flex;
   width: 100%;
   min-height: 100vh;
-  background: #f5f5f5;
+  background: #f0f2f5;
 }
 
+/* 侧边栏 */
 .sidebar {
-  width: 250px;
-  background: #2c3e50;
-  color: white;
-  padding: 20px;
+  background: linear-gradient(180deg, #67B3DB 0%, #9EDAF1 100%);
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
+}
+
+.logo {
+  padding: 30px 20px;
+  text-align: center;
+  color: white;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .logo h2 {
-  margin-bottom: 40px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid #34495e;
+  margin-top: 10px;
+  font-size: 1.3rem;
 }
 
-.nav-menu {
+.sidebar-menu {
   flex: 1;
+  border: none;
+  padding: 20px 0;
 }
 
-.nav-item {
-  padding: 15px 20px;
-  margin-bottom: 10px;
+.sidebar-menu .el-menu-item {
+  margin: 5px 15px;
   border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.3s;
+  transition: all 0.3s;
 }
 
-.nav-item:hover,
-.nav-item.active {
-  background: #34495e;
+.sidebar-menu .el-menu-item:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.sidebar-menu .el-menu-item.is-active {
+  background: rgba(255, 255, 255, 0.2) !important;
+  font-weight: 600;
+}
+
+.sidebar-footer {
+  padding: 20px;
 }
 
 .back-btn {
-  padding: 12px;
-  background: #3498db;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.9);
   border: none;
-  border-radius: 8px;
-  color: white;
-  cursor: pointer;
-  font-size: 1rem;
+  color: #67B3DB;
 }
 
 .back-btn:hover {
-  background: #2980b9;
-}
-
-.main-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.top-bar {
   background: white;
-  padding: 20px 30px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 
-.content-area {
-  padding: 30px;
+/* 主容器 */
+.main-container {
   flex: 1;
-  overflow-y: auto;
 }
 
-/* 数据总览样式 */
+/* 顶部栏 */
+.top-bar {
+  background: linear-gradient(135deg, #67B3DB 0%, #9EDAF1 33%, #CDEEF8 66%, #FFFBDD 100%);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 30px;
+}
+
+.top-bar h1 {
+  color: #2c3e50;
+  font-size: 1.5rem;
+  margin: 0;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 8px 15px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.8);
+  transition: all 0.3s;
+}
+
+.user-info:hover {
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.ml-1 {
+  margin-left: 5px;
+}
+
+/* 内容区域 */
+.content-area {
+  background: #f0f2f5;
+  padding: 20px;
+}
+
+/* 数据总览 */
 .overview-section {
-  max-width: 1400px;
+  max-width: 1600px;
   margin: 0 auto;
 }
 
@@ -400,226 +740,107 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 15px;
 }
 
 .section-header h2 {
   color: #2c3e50;
-  font-size: 1.8rem;
-}
-
-.map-controls {
-  display: flex;
-  gap: 10px;
-}
-
-.control-btn {
-  padding: 8px 16px;
-  background: #3498db;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: background 0.3s;
-}
-
-.control-btn:hover {
-  background: #2980b9;
-}
-
-/* 图例 */
-.legend {
-  display: flex;
-  gap: 20px;
-  align-items: center;
-  padding: 15px 20px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-}
-
-.legend-title {
-  font-weight: 600;
-  color: #2c3e50;
-  margin-right: 10px;
-}
-
-.legend-item {
+  font-size: 1.6rem;
   display: flex;
   align-items: center;
   gap: 8px;
+  margin: 0;
 }
 
-.legend-color {
-  width: 30px;
-  height: 20px;
-  border: 1px solid #ddd;
-  border-radius: 3px;
+/* 图例卡片 */
+.legend-card {
+  margin-bottom: 20px;
 }
 
-/* 地图容器 */
+.legend {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+
+/* 地图卡片 */
+.map-card {
+  margin-bottom: 20px;
+  border: 2px solid #CDEEF8;
+}
+
 .map-wrapper {
   display: flex;
   justify-content: center;
-  margin-bottom: 30px;
-  padding: 20px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: 10px;
 }
 
-/* 统计卡片 */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 20px;
+/* 统计行 */
+.stats-row {
+  margin-bottom: 20px;
 }
 
 .stat-card {
-  background: white;
-  padding: 20px;
-  border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  display: flex;
-  align-items: center;
-  gap: 15px;
-  transition: transform 0.3s;
+  transition: all 0.3s;
+  border-left: 4px solid #67B3DB;
 }
 
 .stat-card:hover {
   transform: translateY(-5px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8px 16px rgba(103, 179, 219, 0.2);
 }
 
-.stat-icon {
-  font-size: 2.5rem;
+.smooth-card {
+  border-left-color: #27ae60;
 }
 
-.stat-info h3 {
-  color: #666;
-  font-size: 0.9rem;
-  margin-bottom: 8px;
-  font-weight: 500;
+.normal-card {
+  border-left-color: #3498db;
 }
 
-.stat-number {
-  font-size: 2rem;
-  font-weight: bold;
-  color: #2c3e50;
-  margin: 0;
+.congested-card {
+  border-left-color: #e74c3c;
 }
 
-/* 系统设置样式 */
-.settings-section h2 {
-  color: #2c3e50;
-  margin-bottom: 30px;
+.alert-card {
+  border-left-color: #e67e22;
 }
 
-.settings-content {
-  background: white;
-  padding: 30px;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  max-width: 600px;
+.vehicle-stat-card {
+  border-left: 4px solid #67B3DB;
 }
 
-.setting-group {
-  margin-bottom: 30px;
+/* 系统设置 */
+.settings-section {
+  max-width: 800px;
 }
 
-.setting-group h3 {
-  color: #2c3e50;
-  margin-bottom: 20px;
-  padding-bottom: 10px;
-  border-bottom: 2px solid #3498db;
-}
-
-.setting-item {
+.card-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 15px;
-}
-
-.setting-item label {
-  font-weight: 500;
-  color: #555;
-}
-
-.setting-item input {
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 5px;
-  width: 150px;
-}
-
-.apply-btn {
-  padding: 10px 30px;
-  background: #27ae60;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 1rem;
-  margin-top: 20px;
-}
-
-.apply-btn:hover {
-  background: #229954;
-}
-
-/* 弹窗样式 */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.modal-content {
-  background: white;
-  padding: 30px;
-  border-radius: 10px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-  min-width: 400px;
-  max-width: 500px;
-}
-
-.modal-content h3 {
-  margin-top: 0;
+  gap: 8px;
+  font-weight: 600;
   color: #2c3e50;
-  border-bottom: 2px solid #3498db;
-  padding-bottom: 10px;
-  margin-bottom: 20px;
 }
 
-.modal-body p {
-  margin: 12px 0;
-  font-size: 1rem;
-  line-height: 1.6;
-}
+/* 响应式 */
+@media (max-width: 768px) {
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 
-.close-btn {
-  margin-top: 20px;
-  padding: 10px 20px;
-  background: #e74c3c;
-  color: white;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  width: 100%;
-  font-size: 1rem;
-}
-
-.close-btn:hover {
-  background: #c0392b;
+  .top-bar h1 {
+    font-size: 1.2rem;
+  }
 }
 </style>

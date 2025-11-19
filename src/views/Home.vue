@@ -6,23 +6,40 @@
     </div>
 
     <div class="role-selection">
-      <div class="role-card" @click="goToAdmin">
-        <!-- <div class="icon">🔧</div> -->
-        <h2>管理者入口</h2>
-        <p>Administrator</p>
-      </div>
+      <el-card class="role-card" shadow="hover" @click="goToAdmin">
+        <div class="card-content">
+          <el-icon :size="80" color="#67B3DB">
+            <Setting />
+          </el-icon>
+          <h2>管理者入口</h2>
+          <p>Administrator</p>
+          <el-button type="primary" class="enter-btn">
+            进入系统
+            <el-icon class="ml-1"><ArrowRight /></el-icon>
+          </el-button>
+        </div>
+      </el-card>
 
-      <div class="role-card" @click="goToUser">
-        <!-- <div class="icon">👤</div> -->
-        <h2>用户入口</h2>
-        <p>User</p>
-      </div>
+      <el-card class="role-card" shadow="hover" @click="goToUser">
+        <div class="card-content">
+          <el-icon :size="80" color="#67B3DB">
+            <User />
+          </el-icon>
+          <h2>用户入口</h2>
+          <p>User</p>
+          <el-button type="primary" class="enter-btn">
+            进入系统
+            <el-icon class="ml-1"><ArrowRight /></el-icon>
+          </el-button>
+        </div>
+      </el-card>
     </div>
   </div>
 </template>
 
 <script setup>
 import { useRouter } from 'vue-router'
+import { Setting, User, ArrowRight } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
@@ -51,55 +68,85 @@ const goToUser = () => {
   text-align: center;
   color: white;
   margin-bottom: 60px;
+  animation: fadeInDown 0.8s ease-out;
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .header h1 {
-  font-size: 2.5rem;
-  margin-bottom: 10px;
+  font-size: 2.8rem;
+  margin-bottom: 15px;
   font-weight: 600;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
 .subtitle {
-  font-size: 1.1rem;
-  opacity: 0.9;
+  font-size: 1.2rem;
+  opacity: 0.95;
+  font-weight: 300;
 }
 
 .role-selection {
   display: flex;
-  gap: 40px;
+  gap: 50px;
   flex-wrap: wrap;
   justify-content: center;
 }
 
 .role-card {
-  background: white;
-  border-radius: 20px;
-  padding: 50px 60px;
+  width: 320px;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-  text-align: center;
-  min-width: 250px;
+  animation: fadeInUp 0.8s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .role-card:hover {
-  transform: translateY(-10px);
-  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+  transform: translateY(-15px);
 }
 
-.icon {
-  font-size: 4rem;
-  margin-bottom: 20px;
+.card-content {
+  text-align: center;
+  padding: 30px 20px;
 }
 
-.role-card h2 {
-  color: #333;
+.card-content h2 {
+  color: #2c3e50;
   font-size: 1.8rem;
-  margin-bottom: 10px;
+  margin: 20px 0 10px;
 }
 
-.role-card p {
+.card-content p {
   color: #666;
   font-size: 1rem;
+  margin-bottom: 25px;
+}
+
+.enter-btn {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.ml-1 {
+  margin-left: 4px;
 }
 </style>
