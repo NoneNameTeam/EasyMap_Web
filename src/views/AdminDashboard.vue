@@ -62,7 +62,7 @@
       </el-header>
 
       <!-- 内容区域 -->
-      <el-main class="content-area">
+      <el-main class="content-area" v-loading="loading" element-loading-text="加载地图中...">
         <!-- 数据总览 -->
         <div v-if="currentTab === 'overview'" class="overview-section">
           <!-- 标题和控制按钮 -->
@@ -79,17 +79,16 @@
               >
                 {{ showDebug ? '隐藏' : '显示' }}坐标
               </el-button>
-              <el-button type="primary" @click="simulateVehicleMovement" :icon="Refresh">
-                移动车辆
-              </el-button>
-              <el-button type="success" @click="startRealtimeUpdate" :icon="VideoPlay">
-                开始更新
-              </el-button>
-              <el-button type="danger" @click="stopRealtimeUpdate" :icon="VideoPause">
-                停止更新
+              <el-button 
+                type="primary" 
+                @click="loadMapData" 
+                :icon="Refresh"
+                :loading="loading"
+              >
+                刷新地图
               </el-button>
               <el-button @click="resetMap" :icon="RefreshLeft">
-                重置地图
+                清空地图
               </el-button>
             </el-space>
           </div>
@@ -135,12 +134,9 @@
                 :height="mapHeight"
                 :block-size="blockSize"
                 :blocks="mapBlocks"
-                :vehicles="vehicles"
                 :show-debug="showDebug"
                 @block-click="handleBlockClick"
                 @block-hover="handleBlockHover"
-                @vehicle-click="handleVehicleClick"
-                @vehicle-position-update="handleVehiclePositionUpdate"
               />
             </div>
           </el-card>
@@ -188,16 +184,16 @@
             </el-col>
           </el-row>
 
-          <!-- 在线车辆统计 -->
+          <!-- 地图块总数统计 -->
           <el-row :gutter="20">
             <el-col :span="24">
-              <el-card shadow="hover" class="vehicle-stat-card">
-                <el-statistic title="在线车辆" :value="vehicles.length">
+              <el-card shadow="hover" class="total-blocks-card">
+                <el-statistic title="地图块总数" :value="mapBlocks.length">
                   <template #prefix>
-                    <el-icon color="#67B3DB" :size="24"><Van /></el-icon>
+                    <el-icon color="#67B3DB" :size="24"><Grid /></el-icon>
                   </template>
                   <template #suffix>
-                    <span style="font-size: 16px; color: #999;">辆</span>
+                    <span style="font-size: 16px; color: #999;">个</span>
                   </template>
                 </el-statistic>
               </el-card>
@@ -270,6 +266,9 @@
             {{ getBlockTypeName(selectedBlock.type) }}
           </el-tag>
         </el-descriptions-item>
+        <el-descriptions-item label="区域ID" v-if="selectedBlock.id">
+          <el-tag>{{ formatBlockId(selectedBlock.id) }}</el-tag>
+        </el-descriptions-item>
         <el-descriptions-item label="坐标位置">
           ({{ selectedBlock.x }}, {{ selectedBlock.y }})
         </el-descriptions-item>
@@ -296,54 +295,19 @@
         </el-button>
       </template>
     </el-dialog>
-
-    <!-- 车辆信息弹窗 -->
-    <el-dialog 
-      v-model="showVehicleDialog" 
-      title="车辆详细信息" 
-      width="500px"
-    >
-      <el-descriptions :column="2" border v-if="selectedVehicle">
-        <el-descriptions-item label="车牌号" :span="2">
-          <el-tag type="primary" size="large">{{ selectedVehicle.plateNumber }}</el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="车辆类型">
-          {{ getVehicleTypeName(selectedVehicle.type) }}
-        </el-descriptions-item>
-        <el-descriptions-item label="当前速度">
-          <el-tag :type="getSpeedTagType(selectedVehicle.speed)">
-            {{ selectedVehicle.speed }} km/h
-          </el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="位置坐标" :span="2">
-          ({{ selectedVehicle.x }}, {{ selectedVehicle.y }})
-        </el-descriptions-item>
-        <el-descriptions-item label="行驶方向" :span="2">
-          {{ getDirectionName(selectedVehicle.direction) }}
-        </el-descriptions-item>
-      </el-descriptions>
-      
-      <template #footer>
-        <el-button @click="showVehicleDialog = false">取消</el-button>
-        <el-button type="primary" @click="showVehicleDialog = false">
-          确定
-        </el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Monitor, DataAnalysis, Setting, Back, User, ArrowDown, SwitchButton,
-  Location, View, Hide, Refresh, VideoPlay, VideoPause, RefreshLeft,
-  Grid, Promotion, WarningFilled, Warning, Van, Check
+  Location, View, Hide, Refresh, RefreshLeft, Grid, Promotion, WarningFilled, Warning, Check
 } from '@element-plus/icons-vue'
 import MapContainer from '../components/map/MapContainer.vue'
-// import vehicleApi from '../api/vehicle'
+import mapApi from '../api/map'
 
 const router = useRouter()
 
@@ -359,17 +323,12 @@ const showDebug = ref(false)
 // 地图块数据
 const mapBlocks = ref([])
 
-// 车辆数据
-const vehicles = ref([])
+// 加载状态
+const loading = ref(false)
 
-// 选中的块和车辆
+// 选中的块
 const selectedBlock = ref(null)
-const selectedVehicle = ref(null)
 const showBlockDialog = ref(false)
-const showVehicleDialog = ref(false)
-
-// 定时器
-let updateTimer = null
 
 // 切换标签
 const switchTab = (tab) => {
@@ -382,125 +341,127 @@ const goBack = () => {
   router.push('/')
 }
 
-// 初始化地图 - 空白地图
+/**
+ * 从后端加载地图数据
+ */
+const loadMapData = async () => {
+  loading.value = true
+  
+  try {
+    // 调用后端 API 获取地图数据
+    const data = await mapApi.getMapData()
+    
+    // 后端返回格式: [{'x':0,'y':0,'id':[0],'type':'building'}, ...]
+    console.log('收到地图数据:', data)
+    
+    // 处理后端数据并转换为前端格式
+    mapBlocks.value = processMapData(data)
+    
+    ElMessage.success(`成功加载 ${mapBlocks.value.length} 个地图块`)
+  } catch (error) {
+    console.error('加载地图数据失败:', error)
+    ElMessage.error('加载地图数据失败，请检查网络连接')
+    
+    // 如果加载失败，使用模拟数据（开发测试用）
+    loadMockMapData()
+  } finally {
+    loading.value = false
+  }
+}
+
+/**
+ * 处理后端返回的地图数据
+ * @param {Array} data - 后端返回的原始数据
+ * @returns {Array} - 处理后的地图块数组
+ */
+const processMapData = (data) => {
+  if (!Array.isArray(data)) {
+    console.warn('地图数据格式错误，应为数组')
+    return []
+  }
+  
+  return data.map(block => {
+    // 处理 id 字段（后端可能返回数组或单个值）
+    let blockId = block.id
+    if (Array.isArray(block.id)) {
+      blockId = block.id[0] // 取数组第一个元素
+    }
+    
+    return {
+      x: Number(block.x) || 0,
+      y: Number(block.y) || 0,
+      id: blockId,
+      type: block.type || 'empty',
+      data: block.data || {}
+    }
+  }).filter(block => {
+    // 过滤掉坐标无效或超出范围的块
+    return block.x >= 0 && block.x < mapWidth.value &&
+           block.y >= 0 && block.y < mapHeight.value
+  })
+}
+
+/**
+ * 加载模拟地图数据（用于测试，后端没准备好时使用）
+ */
+const loadMockMapData = () => {
+  console.log('使用模拟数据')
+  
+  const mockData = [
+    // 建筑物
+    { x: 0, y: 0, id: [1], type: 'building', data: { name: '建筑A' } },
+    { x: 1, y: 0, id: [2], type: 'building', data: { name: '建筑B' } },
+    { x: 19, y: 0, id: [3], type: 'building', data: { name: '建筑C' } },
+    { x: 19, y: 14, id: [4], type: 'building', data: { name: '建筑D' } },
+    
+    // 道路 - 横向主干道
+    { x: 5, y: 7, id: [101], type: 'smooth', data: { name: '主干道', speed: 80 } },
+    { x: 6, y: 7, id: [102], type: 'smooth', data: { name: '主干道', speed: 80 } },
+    { x: 7, y: 7, id: [103], type: 'normal', data: { name: '主干道', speed: 60 } },
+    { x: 8, y: 7, id: [104], type: 'normal', data: { name: '主干道', speed: 60 } },
+    { x: 9, y: 7, id: [105], type: 'congested', data: { name: '主干道', speed: 20 } },
+    { x: 10, y: 7, id: [106], type: 'congested', data: { name: '主干道', speed: 20 } },
+    { x: 11, y: 7, id: [107], type: 'accident', data: { name: '主干道', speed: 0 } },
+    { x: 12, y: 7, id: [108], type: 'normal', data: { name: '主干道', speed: 60 } },
+    
+    // 道路 - 纵向支路
+    { x: 9, y: 5, id: [201], type: 'normal', data: { name: '支路', speed: 40 } },
+    { x: 9, y: 6, id: [202], type: 'normal', data: { name: '支路', speed: 40 } },
+    { x: 9, y: 8, id: [203], type: 'construction', data: { name: '支路', speed: 10 } },
+    { x: 9, y: 9, id: [204], type: 'construction', data: { name: '支路', speed: 10 } },
+  ]
+  
+  mapBlocks.value = processMapData(mockData)
+  ElMessage.info('已加载模拟数据')
+}
+
+/**
+ * 初始化地图 - 空白地图
+ */
 const initMap = () => {
   mapBlocks.value = []
 }
 
-// 模拟车辆移动
-const simulateVehicleMovement = () => {
-  if (vehicles.value.length === 0) {
-    vehicles.value = [
-      {
-        id: 1,
-        plateNumber: '粤A12345',
-        x: 5,
-        y: 7,
-        offsetX: 0,
-        offsetY: 0,
-        speed: 60,
-        direction: 0,
-        type: 'car',
-        showTrail: true,
-        transitionDuration: 1000
-      },
-      {
-        id: 2,
-        plateNumber: '粤B67890',
-        x: 10,
-        y: 8,
-        offsetX: 0,
-        offsetY: 0,
-        speed: 45,
-        direction: 90,
-        type: 'truck',
-        showTrail: true,
-        transitionDuration: 1000
-      },
-      {
-        id: 3,
-        plateNumber: '粤C11111',
-        x: 8,
-        y: 5,
-        offsetX: 0,
-        offsetY: 0,
-        speed: 50,
-        direction: 180,
-        type: 'bus',
-        showTrail: true,
-        transitionDuration: 1000
-      }
-    ]
-    ElMessage.success('已添加测试车辆')
-  } else {
-    vehicles.value = vehicles.value.map(vehicle => {
-      const directions = [
-        { dx: 1, dy: 0, angle: 90 },
-        { dx: -1, dy: 0, angle: 270 },
-        { dx: 0, dy: 1, angle: 180 },
-        { dx: 0, dy: -1, angle: 0 }
-      ]
-      
-      const move = directions[Math.floor(Math.random() * directions.length)]
-      
-      let newX = vehicle.x + move.dx
-      let newY = vehicle.y + move.dy
-      
-      newX = Math.max(0, Math.min(mapWidth.value - 1, newX))
-      newY = Math.max(0, Math.min(mapHeight.value - 1, newY))
-      
-      return {
-        ...vehicle,
-        x: newX,
-        y: newY,
-        direction: move.angle,
-        speed: Math.floor(Math.random() * 40) + 40
-      }
-    })
-    ElMessage.info('车辆已移动')
-  }
-}
-
-// 开始实时更新
-const startRealtimeUpdate = () => {
-  if (updateTimer) {
-    ElMessage.warning('已在自动更新中')
-    return
-  }
-  
-  updateTimer = setInterval(() => {
-    simulateVehicleMovement()
-  }, 2000)
-  
-  ElMessage.success('开始自动更新')
-}
-
-// 停止实时更新
-const stopRealtimeUpdate = () => {
-  if (updateTimer) {
-    clearInterval(updateTimer)
-    updateTimer = null
-    ElMessage.info('已停止自动更新')
-  } else {
-    ElMessage.warning('当前未在自动更新')
-  }
-}
-
-// 重置地图
+/**
+ * 重置/清空地图
+ */
 const resetMap = () => {
   initMap()
-  vehicles.value = []
-  stopRealtimeUpdate()
-  ElMessage.success('地图已重置')
+  ElMessage.success('地图已清空')
 }
 
-// 应用设置
+/**
+ * 应用地图设置
+ */
 const applySettings = () => {
-  initMap()
+  // 重新加载地图数据（根据新的尺寸）
+  loadMapData()
   ElMessage.success('设置已应用')
 }
 
-// 恢复默认设置
+/**
+ * 恢复默认设置
+ */
 const resetSettings = () => {
   mapWidth.value = 20
   mapHeight.value = 15
@@ -508,29 +469,34 @@ const resetSettings = () => {
   ElMessage.success('已恢复默认设置')
 }
 
-// 块点击处理
+/**
+ * 处理地图块点击事件
+ */
 const handleBlockClick = (blockInfo) => {
   selectedBlock.value = blockInfo
   showBlockDialog.value = true
 }
 
-// 块悬停处理
+/**
+ * 处理地图块悬停事件
+ */
 const handleBlockHover = (blockInfo) => {
   // console.log('悬停:', blockInfo)
 }
 
-// 车辆点击处理
-const handleVehicleClick = (vehicleInfo) => {
-  selectedVehicle.value = vehicleInfo
-  showVehicleDialog.value = true
+/**
+ * 格式化块 ID 显示
+ */
+const formatBlockId = (id) => {
+  if (Array.isArray(id)) {
+    return id.join(', ')
+  }
+  return id
 }
 
-// 车辆位置更新处理
-const handleVehiclePositionUpdate = (positionInfo) => {
-  console.log('车辆位置更新:', positionInfo)
-}
-
-// 获取块类型名称
+/**
+ * 获取块类型名称
+ */
 const getBlockTypeName = (type) => {
   const names = {
     empty: '空白区域',
@@ -544,7 +510,9 @@ const getBlockTypeName = (type) => {
   return names[type] || type
 }
 
-// 获取块标签类型
+/**
+ * 获取块标签类型
+ */
 const getBlockTagType = (type) => {
   const types = {
     smooth: 'success',
@@ -557,37 +525,9 @@ const getBlockTagType = (type) => {
   return types[type] || 'info'
 }
 
-// 获取车辆类型名称
-const getVehicleTypeName = (type) => {
-  const names = {
-    car: '小汽车',
-    truck: '货车',
-    bus: '公交车'
-  }
-  return names[type] || type
-}
-
-// 获取速度标签类型
-const getSpeedTagType = (speed) => {
-  if (speed >= 60) return 'success'
-  if (speed >= 40) return 'warning'
-  return 'danger'
-}
-
-// 获取方向名称
-const getDirectionName = (direction) => {
-  if (direction >= 337.5 || direction < 22.5) return '北 ↑'
-  if (direction >= 22.5 && direction < 67.5) return '东北 ↗'
-  if (direction >= 67.5 && direction < 112.5) return '东 →'
-  if (direction >= 112.5 && direction < 157.5) return '东南 ↘'
-  if (direction >= 157.5 && direction < 202.5) return '南 ↓'
-  if (direction >= 202.5 && direction < 247.5) return '西南 ↙'
-  if (direction >= 247.5 && direction < 292.5) return '西 ←'
-  if (direction >= 292.5 && direction < 337.5) return '西北 ↖'
-  return '未知'
-}
-
-// 计算交通统计
+/**
+ * 计算交通统计
+ */
 const trafficStats = computed(() => {
   const stats = {
     smooth: 0,
@@ -607,15 +547,13 @@ const trafficStats = computed(() => {
   return stats
 })
 
-// 页面加载时初始化
+/**
+ * 页面加载时初始化
+ */
 onMounted(() => {
-  initMap()
   ElMessage.success('欢迎使用管理者控制台')
-})
-
-// 页面卸载时清理
-onUnmounted(() => {
-  stopRealtimeUpdate()
+  // 自动加载地图数据
+  loadMapData()
 })
 </script>
 
@@ -815,7 +753,7 @@ onUnmounted(() => {
   border-left-color: #e67e22;
 }
 
-.vehicle-stat-card {
+.total-blocks-card {
   border-left: 4px solid #67B3DB;
 }
 

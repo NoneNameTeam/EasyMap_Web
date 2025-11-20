@@ -126,7 +126,7 @@ const getBlockTypeName = (type) => {
     smooth: '畅通',
     congested: '拥堵',
     accident: '事故',
-    construction: '施工中'
+    // construction: '施工中'
   }
   return names[type] || type
 }
