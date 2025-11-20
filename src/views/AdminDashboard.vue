@@ -266,26 +266,45 @@
             {{ getBlockTypeName(selectedBlock.type) }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="区域ID" v-if="selectedBlock.id">
-          <el-tag>{{ formatBlockId(selectedBlock.id) }}</el-tag>
+        <el-descriptions-item label="区域ID">
+          <el-tag>{{ selectedBlock.id }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="坐标位置">
           ({{ selectedBlock.x }}, {{ selectedBlock.y }})
         </el-descriptions-item>
+        
+        <!-- 新增：道路ID -->
+        <el-descriptions-item label="道路ID" v-if="selectedBlock.data?.roadId">
+          <el-tag type="info">{{ selectedBlock.data.roadId }}</el-tag>
+        </el-descriptions-item>
+        
+        <!-- 新增：交通状况 -->
+        <el-descriptions-item label="交通状况" v-if="selectedBlock.data?.traffic">
+          <el-tag :type="getTrafficTagType(selectedBlock.data.traffic)">
+            {{ getTrafficName(selectedBlock.data.traffic) }}
+          </el-tag>
+        </el-descriptions-item>
+        
+        <!-- 新增：事件信息 -->
+        <el-descriptions-item label="事件" v-if="selectedBlock.data?.event">
+          <el-tag type="warning" effect="dark">
+            {{ getEventName(selectedBlock.data.event) }}
+          </el-tag>
+        </el-descriptions-item>
+        
+        <el-descriptions-item label="通行速度" v-if="selectedBlock.data?.speed !== undefined">
+          <el-tag :type="getSpeedTagType(selectedBlock.data.speed)">
+            {{ selectedBlock.data.speed }} km/h
+          </el-tag>
+        </el-descriptions-item>
+        
+        <!-- 新增：更新时间 -->
+        <el-descriptions-item label="更新时间" v-if="selectedBlock.data?.updatedAt">
+          {{ formatTime(selectedBlock.data.updatedAt) }}
+        </el-descriptions-item>
+        
         <el-descriptions-item label="区域名称" v-if="selectedBlock.data?.name">
           {{ selectedBlock.data.name }}
-        </el-descriptions-item>
-        <el-descriptions-item label="通行速度" v-if="selectedBlock.data?.speed !== undefined">
-          <el-tag type="info">{{ selectedBlock.data.speed }} km/h</el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="状态" v-if="selectedBlock.type === 'congested'">
-          <el-tag type="danger" effect="dark">拥堵中</el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="状态" v-if="selectedBlock.type === 'accident'">
-          <el-tag type="warning" effect="dark">发生事故</el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="状态" v-if="selectedBlock.type === 'construction'">
-          <el-tag color="#f39c12" effect="dark">施工中</el-tag>
         </el-descriptions-item>
       </el-descriptions>
       
@@ -381,18 +400,52 @@ const processMapData = (data) => {
   }
   
   return data.map(block => {
-    // 处理 id 字段（后端可能返回数组或单个值）
-    let blockId = block.id
-    if (Array.isArray(block.id)) {
-      blockId = block.id[0] // 取数组第一个元素
+    // 确定块类型
+    let type = 'empty'
+    
+    // 1. 如果是建筑物
+    if (block.block === 'BUILDING') {
+      type = 'building'
+    } 
+    // 2. 如果有事件，事件优先级最高
+    else if (block.event) {
+      const eventMap = {
+        'ACCIDENT': 'accident',
+        'CONSTRUCTION': 'construction'
+      }
+      type = eventMap[block.event] || 'normal'
     }
+    // 3. 根据交通状况确定类型
+    else if (block.traffic) {
+      const trafficMap = {
+        'SMOOTH': 'smooth',
+        'NORMAL': 'normal',
+        'CONGESTED': 'congested'
+      }
+      type = trafficMap[block.traffic] || 'normal'
+    }
+    
+    // 根据交通状况计算速度
+    let speed = 60
+    if (block.traffic === 'SMOOTH') speed = 80
+    else if (block.traffic === 'NORMAL') speed = 60
+    else if (block.traffic === 'CONGESTED') speed = 20
+    else if (block.event === 'ACCIDENT') speed = 0
+    else if (block.event === 'CONSTRUCTION') speed = 10
     
     return {
       x: Number(block.x) || 0,
       y: Number(block.y) || 0,
-      id: blockId,
-      type: block.type || 'empty',
-      data: block.data || {}
+      id: block.id,
+      type: type,
+      data: {
+        roadId: block.roadId,
+        traffic: block.traffic,
+        event: block.event,
+        speed: speed,
+        updatedAt: block.updatedAt,
+        name: getBlockName(type, block)
+      }
     }
   }).filter(block => {
     // 过滤掉坐标无效或超出范围的块
@@ -402,33 +455,212 @@ const processMapData = (data) => {
 }
 
 /**
- * 加载模拟地图数据（用于测试，后端没准备好时使用）
+ * 获取地图块名称
+ */
+const getBlockName = (type, block) => {
+  if (type === 'building') return '建筑物'
+  if (block.roadId) return `道路 ${block.roadId}`
+  return '区域'
+}
+
+/**
+ * 获取交通状况标签类型
+ */
+const getTrafficTagType = (traffic) => {
+  const typeMap = {
+    'SMOOTH': 'success',
+    'NORMAL': 'info',
+    'CONGESTED': 'danger'
+  }
+  return typeMap[traffic] || 'info'
+}
+
+/**
+ * 获取交通状况名称
+ */
+const getTrafficName = (traffic) => {
+  const nameMap = {
+    'SMOOTH': '畅通',
+    'NORMAL': '正常',
+    'CONGESTED': '拥堵'
+  }
+  return nameMap[traffic] || traffic
+}
+
+/**
+ * 获取事件名称
+ */
+const getEventName = (event) => {
+  const nameMap = {
+    'ACCIDENT': '交通事故',
+    'CONSTRUCTION': '道路施工'
+  }
+  return nameMap[event] || event
+}
+
+/**
+ * 获取速度标签类型
+ */
+const getSpeedTagType = (speed) => {
+  if (speed >= 60) return 'success'
+  if (speed >= 30) return 'warning'
+  return 'danger'
+}
+
+/**
+ * 格式化时间
+ */
+const formatTime = (timeStr) => {
+  if (!timeStr) return '-'
+  const date = new Date(timeStr)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
+
+/**
+ * 加载模拟地图数据（用于测试）
  */
 const loadMockMapData = () => {
   console.log('使用模拟数据')
   
   const mockData = [
     // 建筑物
-    { x: 0, y: 0, id: [1], type: 'building', data: { name: '建筑A' } },
-    { x: 1, y: 0, id: [2], type: 'building', data: { name: '建筑B' } },
-    { x: 19, y: 0, id: [3], type: 'building', data: { name: '建筑C' } },
-    { x: 19, y: 14, id: [4], type: 'building', data: { name: '建筑D' } },
+    { 
+      id: 1, 
+      x: 0, 
+      y: 0, 
+      block: 'BUILDING', 
+      traffic: null, 
+      event: null, 
+      roadId: null, 
+      updatedAt: '2025-01-15T10:00:00.000Z' 
+    },
+    { 
+      id: 2, 
+      x: 1, 
+      y: 0, 
+      block: 'BUILDING', 
+      traffic: null, 
+      event: null, 
+      roadId: null, 
+      updatedAt: '2025-01-15T10:00:00.000Z' 
+    },
+    { 
+      id: 3, 
+      x: 19, 
+      y: 0, 
+      block: 'BUILDING', 
+      traffic: null, 
+      event: null, 
+      roadId: null, 
+      updatedAt: '2025-01-15T10:00:00.000Z' 
+    },
     
-    // 道路 - 横向主干道
-    { x: 5, y: 7, id: [101], type: 'smooth', data: { name: '主干道', speed: 80 } },
-    { x: 6, y: 7, id: [102], type: 'smooth', data: { name: '主干道', speed: 80 } },
-    { x: 7, y: 7, id: [103], type: 'normal', data: { name: '主干道', speed: 60 } },
-    { x: 8, y: 7, id: [104], type: 'normal', data: { name: '主干道', speed: 60 } },
-    { x: 9, y: 7, id: [105], type: 'congested', data: { name: '主干道', speed: 20 } },
-    { x: 10, y: 7, id: [106], type: 'congested', data: { name: '主干道', speed: 20 } },
-    { x: 11, y: 7, id: [107], type: 'accident', data: { name: '主干道', speed: 0 } },
-    { x: 12, y: 7, id: [108], type: 'normal', data: { name: '主干道', speed: 60 } },
+    // 畅通道路
+    { 
+      id: 101, 
+      x: 5, 
+      y: 7, 
+      block: 'ROAD', 
+      traffic: 'SMOOTH', 
+      event: null, 
+      roadId: 'R001', 
+      updatedAt: '2025-01-15T10:30:00.000Z' 
+    },
+    { 
+      id: 102, 
+      x: 6, 
+      y: 7, 
+      block: 'ROAD', 
+      traffic: 'SMOOTH', 
+      event: null, 
+      roadId: 'R001', 
+      updatedAt: '2025-01-15T10:30:00.000Z' 
+    },
     
-    // 道路 - 纵向支路
-    { x: 9, y: 5, id: [201], type: 'normal', data: { name: '支路', speed: 40 } },
-    { x: 9, y: 6, id: [202], type: 'normal', data: { name: '支路', speed: 40 } },
-    { x: 9, y: 8, id: [203], type: 'construction', data: { name: '支路', speed: 10 } },
-    { x: 9, y: 9, id: [204], type: 'construction', data: { name: '支路', speed: 10 } },
+    // 正常道路
+    { 
+      id: 103, 
+      x: 7, 
+      y: 7, 
+      block: 'ROAD', 
+      traffic: 'NORMAL', 
+      event: null, 
+      roadId: 'R001', 
+      updatedAt: '2025-01-15T10:30:00.000Z' 
+    },
+    { 
+      id: 104, 
+      x: 8, 
+      y: 7, 
+      block: 'ROAD', 
+      traffic: 'NORMAL', 
+      event: null, 
+      roadId: 'R001', 
+      updatedAt: '2025-01-15T10:30:00.000Z' 
+    },
+    
+    // 拥堵道路
+    { 
+      id: 105, 
+      x: 9, 
+      y: 7, 
+      block: 'ROAD', 
+      traffic: 'CONGESTED', 
+      event: null, 
+      roadId: 'R001', 
+      updatedAt: '2025-01-15T10:35:00.000Z' 
+    },
+    { 
+      id: 106, 
+      x: 10, 
+      y: 7, 
+      block: 'ROAD', 
+      traffic: 'CONGESTED', 
+      event: null, 
+      roadId: 'R001', 
+      updatedAt: '2025-01-15T10:35:00.000Z' 
+    },
+    
+    // 事故路段
+    { 
+      id: 107, 
+      x: 11, 
+      y: 7, 
+      block: 'ROAD', 
+      traffic: 'NORMAL', 
+      event: 'ACCIDENT', 
+      roadId: 'R001', 
+      updatedAt: '2025-01-15T10:40:00.000Z' 
+    },
+    
+    // 施工路段
+    { 
+      id: 201, 
+      x: 9, 
+      y: 8, 
+      block: 'ROAD', 
+      traffic: 'NORMAL', 
+      event: 'CONSTRUCTION', 
+      roadId: 'R002', 
+      updatedAt: '2025-01-15T09:00:00.000Z' 
+    },
+    { 
+      id: 202, 
+      x: 9, 
+      y: 9, 
+      block: 'ROAD', 
+      traffic: 'NORMAL', 
+      event: 'CONSTRUCTION', 
+      roadId: 'R002', 
+      updatedAt: '2025-01-15T09:00:00.000Z' 
+    },
   ]
   
   mapBlocks.value = processMapData(mockData)
@@ -484,15 +716,6 @@ const handleBlockHover = (blockInfo) => {
   // console.log('悬停:', blockInfo)
 }
 
-/**
- * 格式化块 ID 显示
- */
-const formatBlockId = (id) => {
-  if (Array.isArray(id)) {
-    return id.join(', ')
-  }
-  return id
-}
 
 /**
  * 获取块类型名称
