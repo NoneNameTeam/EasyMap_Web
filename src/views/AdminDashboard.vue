@@ -79,6 +79,30 @@
               >
                 {{ showDebug ? '隐藏' : '显示' }}坐标
               </el-button>
+              
+              <!-- ✅ 添加车辆控制按钮 -->
+              <el-button 
+                type="warning" 
+                @click="simulateVehicleMovement" 
+                :icon="Van"
+              >
+                移动车辆
+              </el-button>
+              <el-button 
+                type="success" 
+                @click="startRealtimeUpdate" 
+                :icon="VideoPlay"
+              >
+                开始自动更新
+              </el-button>
+              <el-button 
+                type="danger" 
+                @click="stopRealtimeUpdate" 
+                :icon="VideoPause"
+              >
+                停止更新
+              </el-button>
+              
               <el-button 
                 type="primary" 
                 @click="loadMapData" 
@@ -134,9 +158,12 @@
                 :height="mapHeight"
                 :block-size="blockSize"
                 :blocks="mapBlocks"
+                :vehicles="vehicles"
                 :show-debug="showDebug"
                 @block-click="handleBlockClick"
                 @block-hover="handleBlockHover"
+                @vehicle-click="handleVehicleClick"
+                @vehicle-position-update="handleVehiclePositionUpdate"
               />
             </div>
           </el-card>
@@ -178,6 +205,21 @@
                 >
                   <template #prefix>
                     <el-icon color="#e67e22"><Warning /></el-icon>
+                  </template>
+                </el-statistic>
+              </el-card>
+            </el-col>
+          </el-row>
+          <!-- 在线车辆统计 -->
+          <el-row :gutter="20">
+            <el-col :span="24">
+              <el-card shadow="hover" class="vehicle-stat-card">
+                <el-statistic title="在线车辆" :value="vehicles.length">
+                  <template #prefix>
+                    <el-icon color="#67B3DB" :size="24"><Van /></el-icon>
+                  </template>
+                  <template #suffix>
+                    <span style="font-size: 16px; color: #999;">辆</span>
                   </template>
                 </el-statistic>
               </el-card>
@@ -314,16 +356,50 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 车辆信息弹窗 -->
+    <el-dialog 
+      v-model="showVehicleDialog" 
+      title="车辆详细信息" 
+      width="500px"
+    >
+      <el-descriptions :column="2" border v-if="selectedVehicle">
+        <el-descriptions-item label="车牌号" :span="2">
+          <el-tag type="primary" size="large">{{ selectedVehicle.plateNumber }}</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="车辆类型">
+          {{ getVehicleTypeName(selectedVehicle.type) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="当前速度">
+          <el-tag :type="getSpeedTagType(selectedVehicle.speed)">
+            {{ selectedVehicle.speed }} km/h
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="位置坐标" :span="2">
+          ({{ selectedVehicle.x }}, {{ selectedVehicle.y }})
+        </el-descriptions-item>
+        <el-descriptions-item label="行驶方向" :span="2">
+          {{ getDirectionName(selectedVehicle.direction) }}
+        </el-descriptions-item>
+      </el-descriptions>
+      
+      <template #footer>
+        <el-button @click="showVehicleDialog = false">取消</el-button>
+        <el-button type="primary" @click="showVehicleDialog = false">
+          确定
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   Monitor, DataAnalysis, Setting, Back, User, ArrowDown, SwitchButton,
-  Location, View, Hide, Refresh, RefreshLeft, Grid, Promotion, WarningFilled, Warning, Check
+  Location, View, Hide, Refresh, RefreshLeft, Grid, Promotion, WarningFilled, Warning, Check, Van
 } from '@element-plus/icons-vue'
 import MapContainer from '../components/map/MapContainer.vue'
 import mapApi from '../api/map'
@@ -348,6 +424,16 @@ const loading = ref(false)
 // 选中的块
 const selectedBlock = ref(null)
 const showBlockDialog = ref(false)
+
+// 车辆数据
+const vehicles = ref([])
+
+// 定时器
+let updateTimer = null
+
+// 选中的车辆
+const selectedVehicle = ref(null)
+const showVehicleDialog = ref(false)
 
 // 切换标签
 const switchTab = (tab) => {
@@ -496,6 +582,197 @@ const getEventName = (event) => {
     'CONSTRUCTION': '道路施工'
   }
   return nameMap[event] || event
+}
+
+/**
+ * 从后端获取车辆实时位置
+ */
+const fetchVehiclesPosition = async () => {
+  try {
+    const data = await vehicleApi.getVehiclesRealtime()
+    
+    // 假设后端返回格式：
+    // {
+    //   vehicles: [
+    //     {
+    //       id: 1,
+    //       plateNumber: '粤A12345',
+    //       x: 5.5,
+    //       y: 7.2,
+    //       speed: 60,
+    //       direction: 90,
+    //       type: 'car'
+    //     }
+    //   ]
+    // }
+    
+    vehicles.value = (data.vehicles || []).map(v => ({
+      id: v.id,
+      plateNumber: v.plateNumber,
+      x: Math.floor(v.x),
+      y: Math.floor(v.y),
+      offsetX: ((v.x % 1) * blockSize.value) || 0,
+      offsetY: ((v.y % 1) * blockSize.value) || 0,
+      speed: v.speed || 0,
+      direction: v.direction || 0,
+      type: v.type || 'car',
+      showTrail: true,
+      transitionDuration: 1000
+    }))
+  } catch (error) {
+    console.error('获取车辆位置失败:', error)
+  }
+}
+
+/**
+ * 模拟车辆移动（测试用）
+ */
+const simulateVehicleMovement = () => {
+  if (vehicles.value.length === 0) {
+    // 添加测试车辆
+    vehicles.value = [
+      {
+        id: 1,
+        plateNumber: '粤A12345',
+        x: 5,
+        y: 7,
+        offsetX: 0,
+        offsetY: 0,
+        speed: 60,
+        direction: 0,
+        type: 'car',
+        showTrail: true,
+        transitionDuration: 1000
+      },
+      {
+        id: 2,
+        plateNumber: '粤B67890',
+        x: 10,
+        y: 8,
+        offsetX: 0,
+        offsetY: 0,
+        speed: 45,
+        direction: 90,
+        type: 'truck',
+        showTrail: true,
+        transitionDuration: 1000
+      },
+      {
+        id: 3,
+        plateNumber: '粤C11111',
+        x: 8,
+        y: 5,
+        offsetX: 0,
+        offsetY: 0,
+        speed: 50,
+        direction: 180,
+        type: 'bus',
+        showTrail: true,
+        transitionDuration: 1000
+      }
+    ]
+    ElMessage.success('已添加测试车辆')
+  } else {
+    // 随机移动车辆
+    vehicles.value = vehicles.value.map(vehicle => {
+      const directions = [
+        { dx: 1, dy: 0, angle: 90 },
+        { dx: -1, dy: 0, angle: 270 },
+        { dx: 0, dy: 1, angle: 180 },
+        { dx: 0, dy: -1, angle: 0 }
+      ]
+      
+      const move = directions[Math.floor(Math.random() * directions.length)]
+      
+      let newX = vehicle.x + move.dx
+      let newY = vehicle.y + move.dy
+      
+      newX = Math.max(0, Math.min(mapWidth.value - 1, newX))
+      newY = Math.max(0, Math.min(mapHeight.value - 1, newY))
+      
+      return {
+        ...vehicle,
+        x: newX,
+        y: newY,
+        direction: move.angle,
+        speed: Math.floor(Math.random() * 40) + 40
+      }
+    })
+    ElMessage.info('车辆已移动')
+  }
+}
+
+/**
+ * 开始实时更新
+ */
+const startRealtimeUpdate = () => {
+  if (updateTimer) {
+    ElMessage.warning('已在自动更新中')
+    return
+  }
+  
+  updateTimer = setInterval(() => {
+    // 生产环境使用：fetchVehiclesPosition()
+    // 测试环境使用：
+    simulateVehicleMovement()
+  }, 2000)
+  
+  ElMessage.success('开始自动更新车辆位置')
+}
+
+/**
+ * 停止实时更新
+ */
+const stopRealtimeUpdate = () => {
+  if (updateTimer) {
+    clearInterval(updateTimer)
+    updateTimer = null
+    ElMessage.info('已停止自动更新')
+  } else {
+    ElMessage.warning('当前未在自动更新')
+  }
+}
+
+/**
+ * 处理车辆点击
+ */
+const handleVehicleClick = (vehicleInfo) => {
+  selectedVehicle.value = vehicleInfo
+  showVehicleDialog.value = true
+}
+
+/**
+ * 处理车辆位置更新
+ */
+const handleVehiclePositionUpdate = (positionInfo) => {
+  console.log('车辆位置更新:', positionInfo)
+}
+
+/**
+ * 获取车辆类型名称
+ */
+const getVehicleTypeName = (type) => {
+  const names = {
+    car: '小汽车',
+    truck: '货车',
+    bus: '公交车'
+  }
+  return names[type] || type
+}
+
+/**
+ * 获取方向名称
+ */
+const getDirectionName = (direction) => {
+  if (direction >= 337.5 || direction < 22.5) return '北 ↑'
+  if (direction >= 22.5 && direction < 67.5) return '东北 ↗'
+  if (direction >= 67.5 && direction < 112.5) return '东 →'
+  if (direction >= 112.5 && direction < 157.5) return '东南 ↘'
+  if (direction >= 157.5 && direction < 202.5) return '南 ↓'
+  if (direction >= 202.5 && direction < 247.5) return '西南 ↙'
+  if (direction >= 247.5 && direction < 292.5) return '西 ←'
+  if (direction >= 292.5 && direction < 337.5) return '西北 ↖'
+  return '未知'
 }
 
 /**
@@ -679,6 +956,8 @@ const initMap = () => {
  */
 const resetMap = () => {
   initMap()
+  vehicles.value = []  
+  stopRealtimeUpdate()  
   ElMessage.success('地图已清空')
 }
 
@@ -775,8 +1054,12 @@ const trafficStats = computed(() => {
  */
 onMounted(() => {
   ElMessage.success('欢迎使用管理者控制台')
-  // 自动加载地图数据
   loadMapData()
+  startRealtimeUpdate()  // 可选：自动启动车辆更新
+})
+
+onUnmounted(() => {
+  stopRealtimeUpdate()
 })
 </script>
 
@@ -977,6 +1260,10 @@ onMounted(() => {
 }
 
 .total-blocks-card {
+  border-left: 4px solid #67B3DB;
+}
+
+.vehicle-stat-card {
   border-left: 4px solid #67B3DB;
 }
 

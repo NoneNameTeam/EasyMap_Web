@@ -24,6 +24,28 @@
       />
     </div>
 
+    <!-- ✅ 车辆层 -->
+    <div class="vehicles-layer">
+      <Vehicle
+        v-for="vehicle in vehicles"
+        :key="vehicle.id"
+        :id="vehicle.id"
+        :plate-number="vehicle.plateNumber"
+        :x="vehicle.x"
+        :y="vehicle.y"
+        :offset-x="vehicle.offsetX || 0"
+        :offset-y="vehicle.offsetY || 0"
+        :block-size="blockSize"
+        :type="vehicle.type"
+        :speed="vehicle.speed"
+        :direction="vehicle.direction"
+        :show-trail="vehicle.showTrail"
+        :transition-duration="vehicle.transitionDuration || 1000"
+        @click="handleVehicleClick"
+        @position-update="handlePositionUpdate"
+      />
+    </div>
+
     <!-- 信息提示层 -->
     <div v-if="hoveredBlock" class="info-tooltip" :style="tooltipStyle">
       <h4>{{ getBlockTypeName(hoveredBlock.type) }}</h4>
@@ -36,6 +58,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import MapBlock from './MapBlock.vue'
+import Vehicle from './Vehicle.vue'
 
 // 定义 props
 const props = defineProps({
@@ -68,11 +91,21 @@ const props = defineProps({
   showDebug: {
     type: Boolean,
     default: false
+  },
+  // 车辆数据
+  vehicles: {
+    type: Array,
+    default: () => []
   }
 })
 
 // 定义 emits
-const emit = defineEmits(['block-click', 'block-hover'])
+const emit = defineEmits([
+  'block-click',
+  'block-hover',
+  'vehicle-click',           
+  'vehicle-position-update'  
+])
 
 // 悬停的块
 const hoveredBlock = ref(null)
@@ -129,6 +162,16 @@ const getBlockTypeName = (type) => {
     // construction: '施工中'
   }
   return names[type] || type
+}
+
+// 车辆点击事件
+const handleVehicleClick = (vehicleInfo) => {
+  emit('vehicle-click', vehicleInfo)
+}
+
+// 车辆位置更新事件
+const handlePositionUpdate = (positionInfo) => {
+  emit('vehicle-position-update', positionInfo)
 }
 </script>
 
@@ -197,5 +240,19 @@ const getBlockTypeName = (type) => {
 .info-tooltip p {
   margin: 4px 0;
   font-size: 12px;
+}
+
+.vehicles-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.vehicles-layer > * {
+  pointer-events: auto;
 }
 </style>
