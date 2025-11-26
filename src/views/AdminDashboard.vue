@@ -143,9 +143,19 @@
                 <span class="legend-dot" style="background: #f39c12;"></span>
                 施工
               </el-tag>
+              <!-- ✅ 新增 -->
+              <el-tag type="danger" effect="plain">
+                <span class="legend-dot" style="background: #c0392b;"></span>
+                道路封闭
+              </el-tag>
               <el-tag color="#34495e" effect="plain">
                 <span class="legend-dot" style="background: #34495e;"></span>
                 建筑
+              </el-tag>
+              <!-- ✅ 新增 -->
+              <el-tag type="info" effect="plain">
+                <span class="legend-dot" style="background: #3498db;"></span>
+                水域
               </el-tag>
             </div>
           </el-card>
@@ -200,8 +210,8 @@
             <el-col :xs="24" :sm="12" :md="6">
               <el-card shadow="hover" class="stat-card alert-card">
                 <el-statistic 
-                  title="事故/施工" 
-                  :value="trafficStats.accident + trafficStats.construction"
+                  title="异常路段" 
+                  :value="trafficStats.accident + trafficStats.construction + trafficStats.road_closure"
                 >
                   <template #prefix>
                     <el-icon color="#e67e22"><Warning /></el-icon>
@@ -311,23 +321,26 @@
         <el-descriptions-item label="区域ID">
           <el-tag>{{ selectedBlock.id }}</el-tag>
         </el-descriptions-item>
+        
+        <!-- ✅ 新增：显示原始 block 类型 -->
+        <el-descriptions-item label="区块类别" v-if="selectedBlock.data?.block">
+          <el-tag>{{ selectedBlock.data.block }}</el-tag>
+        </el-descriptions-item>
+        
         <el-descriptions-item label="坐标位置">
           ({{ selectedBlock.x }}, {{ selectedBlock.y }})
         </el-descriptions-item>
         
-        <!-- 新增：道路ID -->
         <el-descriptions-item label="道路ID" v-if="selectedBlock.data?.roadId">
           <el-tag type="info">{{ selectedBlock.data.roadId }}</el-tag>
         </el-descriptions-item>
         
-        <!-- 新增：交通状况 -->
         <el-descriptions-item label="交通状况" v-if="selectedBlock.data?.traffic">
           <el-tag :type="getTrafficTagType(selectedBlock.data.traffic)">
             {{ getTrafficName(selectedBlock.data.traffic) }}
           </el-tag>
         </el-descriptions-item>
         
-        <!-- 新增：事件信息 -->
         <el-descriptions-item label="事件" v-if="selectedBlock.data?.event">
           <el-tag type="warning" effect="dark">
             {{ getEventName(selectedBlock.data.event) }}
@@ -340,7 +353,6 @@
           </el-tag>
         </el-descriptions-item>
         
-        <!-- 新增：更新时间 -->
         <el-descriptions-item label="更新时间" v-if="selectedBlock.data?.updatedAt">
           {{ formatTime(selectedBlock.data.updatedAt) }}
         </el-descriptions-item>
@@ -349,12 +361,6 @@
           {{ selectedBlock.data.name }}
         </el-descriptions-item>
       </el-descriptions>
-      
-      <template #footer>
-        <el-button type="primary" @click="showBlockDialog = false">
-          确定
-        </el-button>
-      </template>
     </el-dialog>
 
     <!-- 车辆信息弹窗 -->
@@ -476,7 +482,7 @@ const loadMapData = async () => {
 
 /**
  * 处理后端返回的地图数据
- * @param {Array} data - 后端返回的原始数据
+ * @param {Array} data - 后端返回的原始数据（直接是数组）
  * @returns {Array} - 处理后的地图块数组
  */
 const processMapData = (data) => {
@@ -489,15 +495,19 @@ const processMapData = (data) => {
     // 确定块类型
     let type = 'empty'
     
-    // 1. 如果是建筑物
+    // 1. 根据 block 字段确定基础类型
     if (block.block === 'BUILDING') {
       type = 'building'
     } 
+    else if (block.block === 'WATER') {
+      type = 'water'  // ✅ 新增水域类型
+    }
     // 2. 如果有事件，事件优先级最高
     else if (block.event) {
       const eventMap = {
         'ACCIDENT': 'accident',
-        'CONSTRUCTION': 'construction'
+        'CONSTRUCTION': 'construction',
+        'ROAD_CLOSURE': 'road_closure'  // ✅ 新增道路封闭
       }
       type = eventMap[block.event] || 'normal'
     }
@@ -506,7 +516,8 @@ const processMapData = (data) => {
       const trafficMap = {
         'SMOOTH': 'smooth',
         'NORMAL': 'normal',
-        'CONGESTED': 'congested'
+        'CONGESTED': 'congested',
+        'UNKNOWN': 'normal'  // ✅ UNKNOWN 当作 normal 处理
       }
       type = trafficMap[block.traffic] || 'normal'
     }
@@ -516,8 +527,10 @@ const processMapData = (data) => {
     if (block.traffic === 'SMOOTH') speed = 80
     else if (block.traffic === 'NORMAL') speed = 60
     else if (block.traffic === 'CONGESTED') speed = 20
+    else if (block.traffic === 'UNKNOWN') speed = 40
     else if (block.event === 'ACCIDENT') speed = 0
     else if (block.event === 'CONSTRUCTION') speed = 10
+    else if (block.event === 'ROAD_CLOSURE') speed = 0
     
     return {
       x: Number(block.x) || 0,
@@ -528,6 +541,7 @@ const processMapData = (data) => {
         roadId: block.roadId,
         traffic: block.traffic,
         event: block.event,
+        block: block.block,  // ✅ 保存原始 block 类型
         speed: speed,
         updatedAt: block.updatedAt,
         name: getBlockName(type, block)
@@ -545,9 +559,20 @@ const processMapData = (data) => {
  */
 const getBlockName = (type, block) => {
   if (type === 'building') return '建筑物'
+  if (type === 'water') return '水域'  // ✅ 新增
+  if (type === 'road_closure') return '道路封闭'  // ✅ 新增
   if (block.roadId) return `道路 ${block.roadId}`
   return '区域'
 }
+
+// /**
+//  * 获取地图块名称
+//  */
+// const getBlockName = (type, block) => {
+//   if (type === 'building') return '建筑物'
+//   if (block.roadId) return `道路 ${block.roadId}`
+//   return '区域'
+// }
 
 /**
  * 获取交通状况标签类型
@@ -556,7 +581,8 @@ const getTrafficTagType = (traffic) => {
   const typeMap = {
     'SMOOTH': 'success',
     'NORMAL': 'info',
-    'CONGESTED': 'danger'
+    'CONGESTED': 'danger',
+    'UNKNOWN': 'warning'  // ✅ 新增
   }
   return typeMap[traffic] || 'info'
 }
@@ -568,7 +594,8 @@ const getTrafficName = (traffic) => {
   const nameMap = {
     'SMOOTH': '畅通',
     'NORMAL': '正常',
-    'CONGESTED': '拥堵'
+    'CONGESTED': '拥堵',
+    'UNKNOWN': '未知'  // ✅ 新增
   }
   return nameMap[traffic] || traffic
 }
@@ -579,7 +606,8 @@ const getTrafficName = (traffic) => {
 const getEventName = (event) => {
   const nameMap = {
     'ACCIDENT': '交通事故',
-    'CONSTRUCTION': '道路施工'
+    'CONSTRUCTION': '道路施工',
+    'ROAD_CLOSURE': '道路封闭'  // ✅ 新增
   }
   return nameMap[event] || event
 }
@@ -1003,11 +1031,13 @@ const getBlockTypeName = (type) => {
   const names = {
     empty: '空白区域',
     building: '建筑物',
+    water: '水域',  // ✅ 新增
     normal: '普通道路',
     smooth: '畅通道路',
     congested: '拥堵路段',
     accident: '事故区域',
-    construction: '施工区域'
+    construction: '施工区域',
+    road_closure: '道路封闭'  // ✅ 新增
   }
   return names[type] || type
 }
@@ -1022,7 +1052,9 @@ const getBlockTagType = (type) => {
     congested: 'danger',
     accident: 'warning',
     construction: 'warning',
-    building: ''
+    road_closure: 'danger',  // ✅ 新增
+    building: '',
+    water: 'info'  // ✅ 新增
   }
   return types[type] || 'info'
 }
@@ -1037,7 +1069,9 @@ const trafficStats = computed(() => {
     congested: 0,
     accident: 0,
     construction: 0,
-    building: 0
+    road_closure: 0,  // ✅ 新增
+    building: 0,
+    water: 0  // ✅ 新增
   }
   
   mapBlocks.value.forEach(block => {

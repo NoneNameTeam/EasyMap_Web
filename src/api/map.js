@@ -6,45 +6,65 @@ import request from './request'
 export default {
   /**
    * 获取地图数据
+   * @param {Object} params - 查询参数 { block, roadId }
    * @returns {Promise} 返回地图块数据数组
    */
-  getMapData() {
-    return request.get('/map/data')
+  getMapData(params = {}) {
+    return request.get('/maps/data', params)
   },
 
   /**
-   * 获取指定区域的地图数据
-   * @param {Object} params - 查询参数 { x1, y1, x2, y2 }
+   * 按坐标检索地图数据
+   * @param {Number} x - X坐标
+   * @param {Number} y - Y坐标
    * @returns {Promise}
    */
-  getMapRegion(params) {
-    return request.get('/map/region', params)
+  getMapByCoord(x, y) {
+    return request.get(`/maps/${x}/${y}`)
   },
 
   /**
-   * 更新地图块信息
-   * @param {Number} blockId - 地图块ID
-   * @param {Object} data - 更新数据 { type, data }
+   * 创建新的地图数据
+   * @param {Object} data - 地图块数据
    * @returns {Promise}
    */
-  updateMapBlock(blockId, data) {
-    return request.put(`/map/block/${blockId}`, data)
+  createMapBlock(data) {
+    return request.post('/maps/data', data)
   },
 
   /**
-   * 批量更新地图块
-   * @param {Array} blocks - 地图块数组
+   * 更新现有地图数据
+   * @param {String} id - 地图节点ID (UUID)
+   * @param {Object} data - 更新数据
    * @returns {Promise}
    */
-  batchUpdateBlocks(blocks) {
-    return request.post('/map/batch-update', { blocks })
+  updateMapBlock(id, data) {
+    return request.put(`/maps/data/${id}`, data)
   },
 
   /**
-   * 获取地图配置信息
+   * 按区块类型过滤
+   * @param {String} blockType - BUILDING/ROAD/WATER
    * @returns {Promise}
    */
-  getMapConfig() {
-    return request.get('/map/config')
+  getMapByBlockType(blockType) {
+    return request.get('/maps/data', { block: blockType })
+  },
+
+  /**
+   * 按道路ID过滤
+   * @param {String} roadId - 道路ID
+   * @returns {Promise}
+   */
+  getMapByRoadId(roadId) {
+    return request.get('/maps/data', { roadId: roadId })
+  },
+
+  /**
+   * 检查服务器健康状态
+   * @returns {Promise}
+   */
+  checkHealth() {
+    return request.get('/health')
   }
 }

@@ -35,38 +35,24 @@ request.interceptors.request.use(
 // 响应拦截器
 request.interceptors.response.use(
   response => {
-    // 获取响应数据
     const res = response.data
     
-    // 根据后端返回的状态码进行处理
-    // 这里假设后端返回格式为: { code: 200, data: {}, message: 'success' }
-    if (res.code === 200 || res.code === 0) {
-      return res.data
-    } else {
-      // 业务错误处理
-      console.error('业务错误:', res.message)
-      
-      // 统一错误提示（后续可以接入 element-plus 的 Message 组件）
-      alert(res.message || '请求失败')
-      
-      return Promise.reject(new Error(res.message || '请求失败'))
-    }
+    // ✅ 后端直接返回数据，不包装 code/data
+    // 直接返回原始数据
+    return res
   },
   error => {
-    // HTTP 错误处理
     console.error('HTTP错误:', error)
     
     let message = '请求失败'
     
     if (error.response) {
-      // 服务器返回错误状态码
       switch (error.response.status) {
         case 400:
           message = '请求参数错误'
           break
         case 401:
           message = '未授权，请重新登录'
-          // 清除 token 并跳转到登录页
           localStorage.removeItem('token')
           window.location.href = '/'
           break

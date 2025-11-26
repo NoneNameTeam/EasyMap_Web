@@ -24,7 +24,7 @@ const props = defineProps({
     type: String,
     default: 'normal',
     validator: (value) => {
-      return ['building', 'normal', 'congested', 'smooth', 'accident', 'construction', 'empty'].includes(value)
+      return ['building', 'water', 'normal', 'smooth', 'congested', 'accident', 'construction', 'road_closure', 'empty'].includes(value)
     }
   },
   // X 坐标位置
@@ -74,6 +74,12 @@ const typeConfig = {
     opacity: 0.8,
     border: '1px solid #2c3e50'
   },
+  // ✅ 新增：水域
+  water: {
+    backgroundColor: '#3498db',
+    opacity: 0.4,
+    border: '1px solid rgba(52, 152, 219, 0.3)'
+  },
   // 正常道路
   normal: {
     backgroundColor: '#95a5a6',
@@ -104,6 +110,13 @@ const typeConfig = {
     backgroundColor: '#f39c12',
     opacity: 0.6,
     border: '2px dashed #e67e22'
+  },
+  // ✅ 新增：道路封闭
+  road_closure: {
+    backgroundColor: '#c0392b',
+    opacity: 0.8,
+    border: '2px solid #a93226',
+    animation: 'blink 1.5s infinite'
   }
 }
 
