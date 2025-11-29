@@ -5,11 +5,19 @@ import request from './request'
  */
 export default {
   /**
-   * 获取所有车辆实时位置
+   * 获取所有车辆实时位置（管理者端）
    * @returns {Promise}
    */
   getVehiclesRealtime() {
     return request.get('/vehicles/realtime')
+  },
+
+  /**
+   * 获取当前用户的车辆信息（用户端）
+   * @returns {Promise}
+   */
+  getMyVehicle() {
+    return request.get('/user/vehicle')
   },
 
   /**
@@ -47,20 +55,5 @@ export default {
    */
   getVehicleDetail(vehicleId) {
     return request.get(`/vehicles/${vehicleId}`)
-  },
-  /**
-   * 获取当前用户的车辆信息（用户端）
-   * @returns {Promise}
-   */
-  getMyVehicle() {
-    return request.get('/user/vehicle')
-  },
-
-  /**
-   * 获取当前用户车辆的实时位置（用户端）
-   * @returns {Promise}
-   */
-  getMyVehiclePosition() {
-    return request.get('/user/vehicle/position')
   }
 }

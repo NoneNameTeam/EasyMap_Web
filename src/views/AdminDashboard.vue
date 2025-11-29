@@ -170,6 +170,7 @@
                 :blocks="mapBlocks"
                 :vehicles="vehicles"
                 :show-debug="showDebug"
+                :background-image="mapBackgroundImage"
                 @block-click="handleBlockClick"
                 @block-hover="handleBlockHover"
                 @vehicle-click="handleVehicleClick"
@@ -409,6 +410,7 @@ import {
 } from '@element-plus/icons-vue'
 import MapContainer from '../components/map/MapContainer.vue'
 import mapApi from '../api/map'
+import mapBgImage from '@/assets/bgi.png'
 
 const router = useRouter()
 
@@ -416,10 +418,11 @@ const router = useRouter()
 const currentTab = ref('overview')
 
 // 地图配置
-const mapWidth = ref(20)
-const mapHeight = ref(15)
-const blockSize = ref(50)
+const mapWidth = ref(160)
+const mapHeight = ref(160)
+const blockSize = ref(4)
 const showDebug = ref(false)
+const mapBackgroundImage = ref(mapBgImage)
 
 // 地图块数据
 const mapBlocks = ref([])
@@ -619,36 +622,30 @@ const fetchVehiclesPosition = async () => {
   try {
     const data = await vehicleApi.getVehiclesRealtime()
     
-    // 假设后端返回格式：
-    // {
-    //   vehicles: [
-    //     {
-    //       id: 1,
-    //       plateNumber: '粤A12345',
-    //       x: 5.5,
-    //       y: 7.2,
-    //       speed: 60,
-    //       direction: 90,
-    //       type: 'car'
-    //     }
-    //   ]
-    // }
-    
-    vehicles.value = (data.vehicles || []).map(v => ({
-      id: v.id,
-      plateNumber: v.plateNumber,
-      x: Math.floor(v.x),
-      y: Math.floor(v.y),
-      offsetX: ((v.x % 1) * blockSize.value) || 0,
-      offsetY: ((v.y % 1) * blockSize.value) || 0,
-      speed: v.speed || 0,
-      direction: v.direction || 0,
-      type: v.type || 'car',
-      showTrail: true,
-      transitionDuration: 1000
-    }))
+    // 处理后端返回的车辆数据
+    if (data && Array.isArray(data.vehicles)) {
+      vehicles.value = data.vehicles.map(v => ({
+        id: v.id,
+        plateNumber: v.plateNumber,
+        x: Math.floor(v.x),
+        y: Math.floor(v.y),
+        offsetX: ((v.x % 1) * blockSize.value) || 0,
+        offsetY: ((v.y % 1) * blockSize.value) || 0,
+        speed: v.speed || 0,
+        direction: v.direction || 0,
+        type: v.type || 'car',
+        status: v.status || 'moving',
+        showTrail: true,
+        transitionDuration: 1000
+      }))
+      
+      console.log(`✅ 已更新 ${vehicles.value.length} 辆车的位置`)
+    } else {
+      console.warn('车辆数据格式错误')
+    }
   } catch (error) {
     console.error('获取车辆位置失败:', error)
+    // 不显示错误提示，避免频繁弹窗
   }
 }
 
@@ -669,6 +666,7 @@ const simulateVehicleMovement = () => {
         speed: 60,
         direction: 0,
         type: 'car',
+        status: 'moving',
         showTrail: true,
         transitionDuration: 1000
       },
@@ -682,6 +680,7 @@ const simulateVehicleMovement = () => {
         speed: 45,
         direction: 90,
         type: 'truck',
+        status: 'moving',
         showTrail: true,
         transitionDuration: 1000
       },
@@ -695,6 +694,7 @@ const simulateVehicleMovement = () => {
         speed: 50,
         direction: 180,
         type: 'bus',
+        status: 'moving',
         showTrail: true,
         transitionDuration: 1000
       }
@@ -731,7 +731,7 @@ const simulateVehicleMovement = () => {
 }
 
 /**
- * 开始实时更新
+ * 开始实时更新（定时轮询）
  */
 const startRealtimeUpdate = () => {
   if (updateTimer) {
@@ -739,13 +739,21 @@ const startRealtimeUpdate = () => {
     return
   }
   
-  updateTimer = setInterval(() => {
-    // 生产环境使用：fetchVehiclesPosition()
-    // 测试环境使用：
-    simulateVehicleMovement()
-  }, 2000)
+  // ✅ 立即执行一次
+  fetchVehiclesPosition()
+  // 或者使用模拟数据测试：
+  // simulateVehicleMovement()
   
-  ElMessage.success('开始自动更新车辆位置')
+  // ✅ 设置定时器，每 3 秒轮询一次
+  updateTimer = setInterval(() => {
+    // 生产环境：调用真实 API
+    fetchVehiclesPosition()
+    
+    // 测试环境：使用模拟数据
+    // simulateVehicleMovement()
+  }, 3000)  // ✅ 3000ms = 3秒轮询一次
+  
+  ElMessage.success('开始自动更新车辆位置（每3秒）')
 }
 
 /**
@@ -804,9 +812,9 @@ const getDirectionName = (direction) => {
 }
 
 /**
- * 获取速度标签类型
+ * 获取车辆速度标签类型
  */
-const getSpeedTagType = (speed) => {
+const getVehicleSpeedTagType = (speed) => {
   if (speed >= 60) return 'success'
   if (speed >= 30) return 'warning'
   return 'danger'
@@ -984,8 +992,8 @@ const initMap = () => {
  */
 const resetMap = () => {
   initMap()
-  vehicles.value = []  
-  stopRealtimeUpdate()  
+  vehicles.value = []  // ✅ 清空车辆
+  stopRealtimeUpdate()  // ✅ 停止定时器
   ElMessage.success('地图已清空')
 }
 

@@ -179,6 +179,7 @@
                 :blocks="mapBlocks"
                 :vehicles="vehicles"
                 :show-debug="showDebug"
+                :background-image="mapBackgroundImage"
                 @block-click="handleBlockClick"
                 @block-hover="handleBlockHover"
                 @vehicle-click="handleVehicleClick"
@@ -388,6 +389,7 @@ import {
 import MapContainer from '../components/map/MapContainer.vue'
 import mapApi from '../api/map'
 import vehicleApi from '../api/vehicle'
+import mapBgImage from '@/assets/bgi.png'
 
 const router = useRouter()
 
@@ -395,10 +397,12 @@ const router = useRouter()
 const currentTab = ref('map')
 
 // 地图配置
-const mapWidth = ref(20)
-const mapHeight = ref(15)
-const blockSize = ref(50)
+const mapWidth = ref(160)
+const mapHeight = ref(160)
+const blockSize = ref(4)
 const showDebug = ref(false)
+
+const mapBackgroundImage = ref(mapBgImage)
 
 // 地图块数据
 const mapBlocks = ref([])
@@ -582,38 +586,15 @@ const getEventName = (event) => {
 }
 
 /**
- * 获取车辆速度标签类型
- */
-const getVehicleSpeedTagType = (speed) => {
-  if (speed >= 60) return 'success'
-  if (speed >= 30) return 'warning'
-  return 'danger'
-}
-
-
-/**
  * 从后端获取用户自己的车辆位置
  */
 const fetchVehiclesPosition = async () => {
   try {
-    // 调用用户车辆 API（只获取当前用户的车辆）
-    const data = await vehicleApi.getMyVehicle()  // ✅ 改为获取我的车辆
-    
-    // 假设后端返回格式：
-    // {
-    //   vehicle: {
-    //     id: 1,
-    //     plateNumber: '粤A12345',
-    //     x: 5.5,
-    //     y: 7.2,
-    //     speed: 60,
-    //     direction: 90,
-    //     type: 'car'
-    //   }
-    // }
+    // ✅ 调用用户车辆 API（只获取当前用户的车辆）
+    const data = await vehicleApi.getMyVehicle()
     
     // 只显示用户自己的车辆
-    if (data.vehicle) {
+    if (data && data.vehicle) {
       const v = data.vehicle
       vehicles.value = [{
         id: v.id,
@@ -625,177 +606,20 @@ const fetchVehiclesPosition = async () => {
         speed: v.speed || 0,
         direction: v.direction || 0,
         type: v.type || 'car',
+        status: v.status || 'moving',
         showTrail: true,
         transitionDuration: 1000
       }]
+      
+      console.log(`✅ 已更新我的车辆位置: ${v.plateNumber}`)
     } else {
       vehicles.value = []
-      ElMessage.info('您还没有绑定车辆')
+      console.log('当前没有车辆数据')
     }
   } catch (error) {
     console.error('获取车辆位置失败:', error)
-    ElMessage.error('获取车辆位置失败')
+    // 不显示错误提示，避免频繁弹窗
   }
-}
-
-/**
- * 格式化时间
- */
-const formatTime = (timeStr) => {
-  if (!timeStr) return '-'
-  const date = new Date(timeStr)
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  })
-}
-
-/**
- * 加载模拟地图数据（用于测试）
- */
-const loadMockMapData = () => {
-  console.log('使用模拟数据')
-  
-  const mockData = [
-    // 建筑物
-    { 
-      id: 1, 
-      x: 0, 
-      y: 0, 
-      block: 'BUILDING', 
-      traffic: null, 
-      event: null, 
-      roadId: null, 
-      updatedAt: '2025-01-15T10:00:00.000Z' 
-    },
-    { 
-      id: 2, 
-      x: 1, 
-      y: 0, 
-      block: 'BUILDING', 
-      traffic: null, 
-      event: null, 
-      roadId: null, 
-      updatedAt: '2025-01-15T10:00:00.000Z' 
-    },
-    { 
-      id: 3, 
-      x: 19, 
-      y: 0, 
-      block: 'BUILDING', 
-      traffic: null, 
-      event: null, 
-      roadId: null, 
-      updatedAt: '2025-01-15T10:00:00.000Z' 
-    },
-    
-    // 畅通道路
-    { 
-      id: 101, 
-      x: 5, 
-      y: 7, 
-      block: 'ROAD', 
-      traffic: 'SMOOTH', 
-      event: null, 
-      roadId: 'R001', 
-      updatedAt: '2025-01-15T10:30:00.000Z' 
-    },
-    { 
-      id: 102, 
-      x: 6, 
-      y: 7, 
-      block: 'ROAD', 
-      traffic: 'SMOOTH', 
-      event: null, 
-      roadId: 'R001', 
-      updatedAt: '2025-01-15T10:30:00.000Z' 
-    },
-    
-    // 正常道路
-    { 
-      id: 103, 
-      x: 7, 
-      y: 7, 
-      block: 'ROAD', 
-      traffic: 'NORMAL', 
-      event: null, 
-      roadId: 'R001', 
-      updatedAt: '2025-01-15T10:30:00.000Z' 
-    },
-    { 
-      id: 104, 
-      x: 8, 
-      y: 7, 
-      block: 'ROAD', 
-      traffic: 'NORMAL', 
-      event: null, 
-      roadId: 'R001', 
-      updatedAt: '2025-01-15T10:30:00.000Z' 
-    },
-    
-    // 拥堵道路
-    { 
-      id: 105, 
-      x: 9, 
-      y: 7, 
-      block: 'ROAD', 
-      traffic: 'CONGESTED', 
-      event: null, 
-      roadId: 'R001', 
-      updatedAt: '2025-01-15T10:35:00.000Z' 
-    },
-    { 
-      id: 106, 
-      x: 10, 
-      y: 7, 
-      block: 'ROAD', 
-      traffic: 'CONGESTED', 
-      event: null, 
-      roadId: 'R001', 
-      updatedAt: '2025-01-15T10:35:00.000Z' 
-    },
-    
-    // 事故路段
-    { 
-      id: 107, 
-      x: 11, 
-      y: 7, 
-      block: 'ROAD', 
-      traffic: 'NORMAL', 
-      event: 'ACCIDENT', 
-      roadId: 'R001', 
-      updatedAt: '2025-01-15T10:40:00.000Z' 
-    },
-    
-    // 施工路段
-    { 
-      id: 201, 
-      x: 9, 
-      y: 8, 
-      block: 'ROAD', 
-      traffic: 'NORMAL', 
-      event: 'CONSTRUCTION', 
-      roadId: 'R002', 
-      updatedAt: '2025-01-15T09:00:00.000Z' 
-    },
-    { 
-      id: 202, 
-      x: 9, 
-      y: 9, 
-      block: 'ROAD', 
-      traffic: 'NORMAL', 
-      event: 'CONSTRUCTION', 
-      roadId: 'R002', 
-      updatedAt: '2025-01-15T09:00:00.000Z' 
-    },
-  ]
-  
-  mapBlocks.value = processMapData(mockData)
-  ElMessage.info('已加载模拟数据')
 }
 
 /**
@@ -807,7 +631,7 @@ const simulateVehicleMovement = () => {
     vehicles.value = [
       {
         id: 1,
-        plateNumber: '粤A88888',  // 用户的车牌号
+        plateNumber: '粤A88888',
         x: 7,
         y: 7,
         offsetX: 0,
@@ -815,6 +639,7 @@ const simulateVehicleMovement = () => {
         speed: 60,
         direction: 0,
         type: 'car',
+        status: 'moving',
         showTrail: true,
         transitionDuration: 1000
       }
@@ -850,6 +675,100 @@ const simulateVehicleMovement = () => {
 }
 
 /**
+ * 开始实时更新（定时轮询）
+ */
+const startRealtimeUpdate = () => {
+  if (vehicles.value.length === 0) {
+    ElMessage.warning('请先显示车辆')
+    return
+  }
+  
+  if (updateTimer) {
+    ElMessage.warning('已在跟踪中')
+    return
+  }
+  
+  // ✅ 立即执行一次
+  fetchVehiclesPosition()
+  // 或者使用模拟数据测试：
+  // simulateVehicleMovement()
+  
+  // ✅ 设置定时器，每 3 秒轮询一次
+  updateTimer = setInterval(() => {
+    // 生产环境：调用真实 API
+    fetchVehiclesPosition()
+    
+    // 测试环境：使用模拟数据
+    // simulateVehicleMovement()
+  }, 500)  // ✅ 3000ms = 3秒轮询一次
+  
+  ElMessage.success('开始跟踪我的车辆（每3秒）')
+}
+
+/**
+ * 停止实时更新
+ */
+const stopRealtimeUpdate = () => {
+  if (updateTimer) {
+    clearInterval(updateTimer)
+    updateTimer = null
+    ElMessage.info('已停止跟踪')
+  } else {
+    ElMessage.warning('当前未在跟踪')
+  }
+}
+
+/**
+ * 处理车辆点击
+ */
+const handleVehicleClick = (vehicleInfo) => {
+  selectedVehicle.value = vehicleInfo
+  showVehicleDialog.value = true
+}
+
+/**
+ * 处理车辆位置更新
+ */
+const handleVehiclePositionUpdate = (positionInfo) => {
+  console.log('车辆位置更新:', positionInfo)
+}
+
+/**
+ * 获取车辆类型名称
+ */
+const getVehicleTypeName = (type) => {
+  const names = {
+    car: '小汽车',
+    truck: '货车',
+    bus: '公交车'
+  }
+  return names[type] || type
+}
+
+/**
+ * 获取方向名称
+ */
+const getDirectionName = (direction) => {
+  if (direction >= 337.5 || direction < 22.5) return '北 ↑'
+  if (direction >= 22.5 && direction < 67.5) return '东北 ↗'
+  if (direction >= 67.5 && direction < 112.5) return '东 →'
+  if (direction >= 112.5 && direction < 157.5) return '东南 ↘'
+  if (direction >= 157.5 && direction < 202.5) return '南 ↓'
+  if (direction >= 202.5 && direction < 247.5) return '西南 ↙'
+  if (direction >= 247.5 && direction < 292.5) return '西 ←'
+  if (direction >= 292.5 && direction < 337.5) return '西北 ↖'
+  return '未知'
+}
+
+/**
+ * 获取车辆速度标签类型
+ */
+const getVehicleSpeedTagType = (speed) => {
+  if (speed >= 60) return 'success'
+  if (speed >= 30) return 'warning'
+  return 'danger'
+}
+/**
  * 初始化地图
  */
 const initMap = () => {
@@ -861,6 +780,8 @@ const initMap = () => {
  */
 const resetMap = () => {
   initMap()
+  vehicles.value = []
+  stopRealtimeUpdate()
   ElMessage.success('地图已清空')
 }
 
@@ -938,41 +859,6 @@ const trafficStats = computed(() => {
   return stats
 })
 
-/**
- * 开始实时更新
- */
-const startRealtimeUpdate = () => {
-  if (vehicles.value.length === 0) {
-    ElMessage.warning('请先显示车辆')
-    return
-  }
-  
-  if (updateTimer) {
-    ElMessage.warning('已在跟踪中')
-    return
-  }
-  
-  updateTimer = setInterval(() => {
-    // 生产环境使用：fetchVehiclesPosition()
-    // 测试环境使用：
-    simulateVehicleMovement()
-  }, 2000)
-  
-  ElMessage.success('开始跟踪我的车辆')  // ✅ 修改提示
-}
-
-/**
- * 停止实时更新
- */
-const stopRealtimeUpdate = () => {
-  if (updateTimer) {
-    clearInterval(updateTimer)
-    updateTimer = null
-    ElMessage.info('已停止跟踪')
-  } else {
-    ElMessage.warning('当前未在跟踪')
-  }
-}
 
 /**
  * 页面加载时初始化
@@ -984,6 +870,9 @@ onMounted(() => {
   startRealtimeUpdate()  // 可选：自动启动车辆更新
 })
 
+/**
+ * 页面卸载时清理定时器
+ */
 onUnmounted(() => {
   stopRealtimeUpdate()
 })
