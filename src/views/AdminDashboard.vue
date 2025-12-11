@@ -177,18 +177,17 @@
           <!-- 地图容器 -->
           <el-card shadow="hover" class="map-card">
             <div class="map-wrapper">
-              <MapContainer
+              <CanvasMapContainer
                 :width="mapWidth"
                 :height="mapHeight"
                 :block-size="blockSize"
                 :blocks="mapBlocks"
                 :vehicles="vehicles"
                 :show-debug="showDebug"
-                :background-image="mapBackgroundImage"
+                :background-image="backgroundImage"
                 @block-click="handleBlockClick"
                 @block-hover="handleBlockHover"
                 @vehicle-click="handleVehicleClick"
-                @vehicle-position-update="handleVehiclePositionUpdate"
               />
             </div>
           </el-card>
@@ -363,11 +362,11 @@
           </el-tag>
         </el-descriptions-item>
         
-        <el-descriptions-item label="通行速度" v-if="selectedBlock.data?.speed !== undefined">
+        <!-- <el-descriptions-item label="通行速度" v-if="selectedBlock.data?.speed !== undefined">
           <el-tag :type="getSpeedTagType(selectedBlock.data.speed)">
             {{ selectedBlock.data.speed }} km/h
           </el-tag>
-        </el-descriptions-item>
+        </el-descriptions-item> -->
         
         <el-descriptions-item label="更新时间" v-if="selectedBlock.data?.updatedAt">
           {{ formatTime(selectedBlock.data.updatedAt) }}
@@ -424,9 +423,10 @@ import {
   Location, View, Hide, Refresh, RefreshLeft, Grid, Promotion, WarningFilled, Warning, Check, Van
 } from '@element-plus/icons-vue'
 import MapContainer from '../components/map/MapContainer.vue'
+import CanvasMapContainer from '../components/map/CanvasMapContainer.vue'
 import mapApi from '../api/map'
 // import vehicleApi from '../api/vehicle'
-import mapBgImage from '@/assets/bgi.png'
+import mapBg from '@/assets/bgi.png'
 
 const router = useRouter()
 
@@ -438,7 +438,7 @@ const mapWidth = ref(160)
 const mapHeight = ref(160)
 const blockSize = ref(4)
 const showDebug = ref(false)
-const mapBackgroundImage = ref(mapBgImage)
+const backgroundImage = ref(mapBg)
 
 // 地图块数据
 const mapBlocks = ref([])
@@ -1185,6 +1185,7 @@ const resetSettings = () => {
  * 处理地图块点击事件
  */
 const handleBlockClick = (blockInfo) => {
+  console.log('🖱️ 点击地图块:', blockInfo)
   selectedBlock.value = blockInfo
   showBlockDialog.value = true
 }
