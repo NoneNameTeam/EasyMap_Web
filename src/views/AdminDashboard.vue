@@ -62,7 +62,11 @@
       </el-header>
 
       <!-- 内容区域 -->
-      <el-main class="content-area" v-loading="loading" element-loading-text="加载地图中...">
+      <el-main 
+        class="content-area" 
+        v-loading="loading" 
+        :element-loading-text="`加载地图中... ${loadingProgress.current} / ~${loadingProgress.total} (${loadingProgress.percentage.toFixed(1)}%)`"
+      >
         <!-- 数据总览 -->
         <div v-if="currentTab === 'overview'" class="overview-section">
           <!-- 标题和控制按钮 -->
@@ -111,6 +115,16 @@
               >
                 刷新地图
               </el-button>
+
+              <!-- ✅ 新增：诊断按钮 -->
+              <el-button 
+                  type="warning" 
+                  @click="diagnosisAPI"
+                  :icon="Cpu"
+                >
+                  API诊断
+              </el-button>
+
               <el-button @click="resetMap" :icon="RefreshLeft">
                 清空地图
               </el-button>
@@ -342,7 +356,8 @@
           </el-tag>
         </el-descriptions-item>
         
-        <el-descriptions-item label="事件" v-if="selectedBlock.data?.event">
+        <!-- 事件信息 -->
+        <el-descriptions-item label="事件" v-if="selectedBlock.data?.event && selectedBlock.data.event !== 'NONE'">
           <el-tag type="warning" effect="dark">
             {{ getEventName(selectedBlock.data.event) }}
           </el-tag>
@@ -410,6 +425,7 @@ import {
 } from '@element-plus/icons-vue'
 import MapContainer from '../components/map/MapContainer.vue'
 import mapApi from '../api/map'
+// import vehicleApi from '../api/vehicle'
 import mapBgImage from '@/assets/bgi.png'
 
 const router = useRouter()
@@ -429,6 +445,14 @@ const mapBlocks = ref([])
 
 // 加载状态
 const loading = ref(false)
+
+// ✅ 新增：加载进度
+const loadingProgress = ref({
+  current: 0,
+  total: 25000,  // 预估总数
+  percentage: 0,
+  pageCount: 0
+})
 
 // 选中的块
 const selectedBlock = ref(null)
@@ -461,71 +485,197 @@ const goBack = () => {
 const loadMapData = async () => {
   loading.value = true
   
+  // ✅ 重置进度
+  loadingProgress.value = {
+    current: 0,
+    total: 25000,
+    percentage: 0,
+    pageCount: 0
+  }
+  
   try {
-    // 调用后端 API 获取地图数据
-    const data = await mapApi.getMapData()
+    console.log('📍 开始加载地图数据...')
     
-    // 后端返回格式: [{'x':0,'y':0,'id':[0],'type':'building'}, ...]
-    console.log('收到地图数据:', data)
+    // ✅ 使用进度回调
+    const data = await mapApi.getAllMapData({}, (count, hasMore, pageCount) => {
+      loadingProgress.value = {
+        current: count,
+        total: 25000,  // 预估值
+        percentage: Math.min((count / 25000) * 100, 99),  // 最多显示 99%
+        pageCount: pageCount
+      }
+      console.log(`📊 加载进度: ${count} / ~25000 (第 ${pageCount} 页)`)
+    })
+    
+    console.log('✅ 收到地图数据:', data.length, '条')
+    console.log('📦 原始数据示例:', data.slice(0, 3))
+    
+    // ✅ 检查数据是否为空
+    if (!data || data.length === 0) {
+      ElMessage.warning('后端返回的地图数据为空')
+      loadingProgress.value.percentage = 100
+      return
+    }
     
     // 处理后端数据并转换为前端格式
     mapBlocks.value = processMapData(data)
     
+    console.log('🗺️ 处理后的地图块数量:', mapBlocks.value.length)
+    console.log('🔍 处理后数据示例:', mapBlocks.value.slice(0, 3))
+    
+    // ✅ 更新进度为 100%
+    loadingProgress.value = {
+      current: mapBlocks.value.length,
+      total: mapBlocks.value.length,
+      percentage: 100,
+      pageCount: loadingProgress.value.pageCount
+    }
+    
     ElMessage.success(`成功加载 ${mapBlocks.value.length} 个地图块`)
   } catch (error) {
-    console.error('加载地图数据失败:', error)
-    ElMessage.error('加载地图数据失败，请检查网络连接')
+    console.error('❌ 加载地图数据失败:', error)
+    ElMessage.error(`加载失败: ${error.message}`)
     
-    // 如果加载失败，使用模拟数据（开发测试用）
-    loadMockMapData()
+    // ✅ 开发测试：加载失败时使用模拟数据
+    // loadMockMapData()
   } finally {
     loading.value = false
   }
 }
 
+import { Cpu } from '@element-plus/icons-vue'  // ✅ 添加图标导入
+
+/**
+ * API 诊断函数 - 支持代理
+ */
+const diagnosisAPI = async () => {
+  console.log('🔧 开始 API 诊断...')
+  console.log('📡 API Base URL:', import.meta.env.VITE_API_BASE_URL)
+  
+  ElMessage.info('正在进行 API 诊断...')
+  
+  try {
+    // 1. 测试健康检查
+    console.log('1️⃣ 测试健康检查 /health')
+    const health = await mapApi.checkHealth()
+    console.log('✅ 健康检查成功:', health)
+    
+    // 2. 测试获取第一页数据
+    console.log('2️⃣ 测试获取第一页数据 /maps/data?limit=10')
+    const firstPage = await mapApi.getMapData({ limit: 10 })
+    console.log('✅ 第一页数据:', firstPage)
+    
+    // ✅ 修改：firstPage 已经是解包后的数据
+    console.log('  - items数量:', firstPage.items?.length || 0)
+    console.log('  - nextCursor:', firstPage.nextCursor)
+    console.log('  - hasNextPage:', firstPage.hasNextPage)
+    
+    if (firstPage.items && firstPage.items.length > 0) {
+      console.log('  - 第一条数据示例:', firstPage.items[0])
+    } else {
+      console.warn('⚠️ 第一页没有返回数据！')
+      console.log('  - 原始响应:', firstPage)
+    }
+    
+    // 3. 测试按坐标查询
+    if (firstPage.items && firstPage.items.length > 0) {
+      const testItem = firstPage.items[0]
+      console.log(`3️⃣ 测试按坐标查询 /maps/${testItem.x}/${testItem.y}`)
+      const coordData = await mapApi.getMapByCoord(testItem.x, testItem.y)
+      console.log('✅ 坐标查询结果:', coordData)
+    }
+    
+    // 4. 测试环境变量
+    console.log('4️⃣ 环境配置检查')
+    console.log('  - VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL)
+    console.log('  - MODE:', import.meta.env.MODE)
+    console.log('  - DEV:', import.meta.env.DEV)
+    console.log('  - PROD:', import.meta.env.PROD)
+    
+    // 5. 显示诊断结果
+    const message = `
+      ✅ API 诊断完成！
+      
+      环境: ${import.meta.env.MODE}
+      API地址: ${import.meta.env.VITE_API_BASE_URL}
+      健康状态: ${health.status}
+      第一页数据: ${firstPage.items?.length || 0} 条
+      是否有下一页: ${firstPage.hasNextPage ? '是' : '否'}
+      
+      详细信息请查看控制台
+    `
+    
+    ElMessage.success({
+      message: message,
+      duration: 5000,
+      showClose: true
+    })
+    
+  } catch (error) {
+    console.error('❌ API 诊断失败:', error)
+    console.error('  - 错误类型:', error.name)
+    console.error('  - 错误信息:', error.message)
+    console.error('  - 错误堆栈:', error.stack)
+    
+    ElMessage.error({
+      message: `诊断失败: ${error.message}`,
+      duration: 5000,
+      showClose: true
+    })
+  }
+}
+
 /**
  * 处理后端返回的地图数据
- * @param {Array} data - 后端返回的原始数据（直接是数组）
- * @returns {Array} - 处理后的地图块数组
  */
 const processMapData = (data) => {
+  console.log('🔄 开始处理地图数据...')
+  console.log('📥 原始数据数量:', data?.length || 0)
+  
   if (!Array.isArray(data)) {
-    console.warn('地图数据格式错误，应为数组')
+    console.error('❌ 地图数据格式错误，应为数组，实际类型:', typeof data)
     return []
   }
   
-  return data.map(block => {
+  if (data.length === 0) {
+    console.warn('⚠️ 原始数据为空数组')
+    return []
+  }
+  
+  console.log('📋 原始数据示例（前3条）:', data.slice(0, 3))
+  
+  const processed = data.map((block, index) => {
+    // 每处理 5000 条打印一次进度
+    if (index % 5000 === 0) {
+      console.log(`⏳ 处理进度: ${index} / ${data.length}`)
+    }
+    
     // 确定块类型
     let type = 'empty'
     
-    // 1. 根据 block 字段确定基础类型
     if (block.block === 'BUILDING') {
       type = 'building'
     } 
     else if (block.block === 'WATER') {
-      type = 'water'  // ✅ 新增水域类型
+      type = 'water'
     }
-    // 2. 如果有事件，事件优先级最高
-    else if (block.event) {
+    else if (block.event && block.event !== 'NONE') {
       const eventMap = {
         'ACCIDENT': 'accident',
         'CONSTRUCTION': 'construction',
-        'ROAD_CLOSURE': 'road_closure'  // ✅ 新增道路封闭
+        'ROAD_CLOSURE': 'road_closure'
       }
       type = eventMap[block.event] || 'normal'
     }
-    // 3. 根据交通状况确定类型
-    else if (block.traffic) {
+    else if (block.traffic && block.traffic !== 'UNKNOWN') {
       const trafficMap = {
         'SMOOTH': 'smooth',
         'NORMAL': 'normal',
-        'CONGESTED': 'congested',
-        'UNKNOWN': 'normal'  // ✅ UNKNOWN 当作 normal 处理
+        'CONGESTED': 'congested'
       }
       type = trafficMap[block.traffic] || 'normal'
     }
     
-    // 根据交通状况计算速度
     let speed = 60
     if (block.traffic === 'SMOOTH') speed = 80
     else if (block.traffic === 'NORMAL') speed = 60
@@ -544,17 +694,31 @@ const processMapData = (data) => {
         roadId: block.roadId,
         traffic: block.traffic,
         event: block.event,
-        block: block.block,  // ✅ 保存原始 block 类型
+        block: block.block,
         speed: speed,
         updatedAt: block.updatedAt,
         name: getBlockName(type, block)
       }
     }
-  }).filter(block => {
-    // 过滤掉坐标无效或超出范围的块
+  })
+  
+  console.log('✅ 数据处理完成，处理后数量:', processed.length)
+  
+  // 过滤坐标范围
+  const filtered = processed.filter(block => {
     return block.x >= 0 && block.x < mapWidth.value &&
            block.y >= 0 && block.y < mapHeight.value
   })
+  
+  const filteredCount = processed.length - filtered.length
+  if (filteredCount > 0) {
+    console.log(`🚫 过滤掉 ${filteredCount} 个超出范围的块`)
+  }
+  
+  console.log('📊 最终返回数量:', filtered.length)
+  console.log('📋 处理后数据示例（前3条）:', filtered.slice(0, 3))
+  
+  return filtered
 }
 
 /**
@@ -608,9 +772,10 @@ const getTrafficName = (traffic) => {
  */
 const getEventName = (event) => {
   const nameMap = {
+    'NONE': '无事件',  // ✅ 新增
     'ACCIDENT': '交通事故',
     'CONSTRUCTION': '道路施工',
-    'ROAD_CLOSURE': '道路封闭'  // ✅ 新增
+    'ROAD_CLOSURE': '道路封闭'
   }
   return nameMap[event] || event
 }

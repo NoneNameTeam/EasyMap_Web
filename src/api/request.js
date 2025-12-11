@@ -2,31 +2,27 @@ import axios from 'axios'
 
 // 创建 axios 实例
 const request = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api', // API基础路径
-  timeout: 15000, // 请求超时时间
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api',
+  timeout: 60000,  // ✅ 增加到 60 秒（处理大数据量）
   headers: {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json;charset=UTF-8'
   }
 })
 
 // 请求拦截器
 request.interceptors.request.use(
   config => {
-    // 从本地存储获取 token
     const token = localStorage.getItem('token')
     
-    // 如果 token 存在，添加到请求头
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`
     }
     
-    // 显示加载状态（可选）
     console.log('请求发送:', config.url)
     
     return config
   },
   error => {
-    // 请求错误处理
     console.error('请求错误:', error)
     return Promise.reject(error)
   }
@@ -37,8 +33,32 @@ request.interceptors.response.use(
   response => {
     const res = response.data
     
-    // ✅ 后端直接返回数据，不包装 code/data
-    // 直接返回原始数据
+    // ✅ 处理两种不同的响应格式
+    
+    // 格式1: 直接返回数据（如健康检查）
+    // { status: 'ok', timestamp: 123456 }
+    if (res.status !== undefined || res.timestamp !== undefined) {
+      console.log('📥 直接格式响应:', res)
+      return res
+    }
+    
+    // 格式2: 包装格式
+    // { code: 200, message: 'Success', data: {...} }
+    if (res.code !== undefined) {
+      if (res.code === 200) {
+        console.log('📥 包装格式响应 - 成功:', res.data)
+        return res.data  // ✅ 返回 data 字段
+      } else {
+        console.error('📥 包装格式响应 - 业务错误:', res)
+        const errorMessage = res.message || '请求失败'
+        alert(errorMessage)
+        return Promise.reject(new Error(errorMessage))
+      }
+    }
+    
+    // 格式3: 其他格式（如分页数据）
+    // { items: [...], nextCursor: '...', hasNextPage: true }
+    console.log('📥 其他格式响应:', res)
     return res
   },
   error => {
@@ -90,12 +110,6 @@ request.interceptors.response.use(
 
 // 封装常用请求方法
 export default {
-  /**
-   * GET 请求
-   * @param {string} url 请求地址
-   * @param {object} params 请求参数
-   * @param {object} config 额外配置
-   */
   get(url, params = {}, config = {}) {
     return request({
       method: 'get',
@@ -105,12 +119,6 @@ export default {
     })
   },
 
-  /**
-   * POST 请求
-   * @param {string} url 请求地址
-   * @param {object} data 请求数据
-   * @param {object} config 额外配置
-   */
   post(url, data = {}, config = {}) {
     return request({
       method: 'post',
@@ -120,12 +128,6 @@ export default {
     })
   },
 
-  /**
-   * PUT 请求
-   * @param {string} url 请求地址
-   * @param {object} data 请求数据
-   * @param {object} config 额外配置
-   */
   put(url, data = {}, config = {}) {
     return request({
       method: 'put',
@@ -135,12 +137,6 @@ export default {
     })
   },
 
-  /**
-   * DELETE 请求
-   * @param {string} url 请求地址
-   * @param {object} params 请求参数
-   * @param {object} config 额外配置
-   */
   delete(url, params = {}, config = {}) {
     return request({
       method: 'delete',
@@ -150,11 +146,6 @@ export default {
     })
   },
 
-  /**
-   * 上传文件
-   * @param {string} url 请求地址
-   * @param {FormData} formData 表单数据
-   */
   upload(url, formData) {
     return request({
       method: 'post',
@@ -166,11 +157,6 @@ export default {
     })
   },
 
-  /**
-   * 下载文件
-   * @param {string} url 请求地址
-   * @param {object} params 请求参数
-   */
   download(url, params = {}) {
     return request({
       method: 'get',
