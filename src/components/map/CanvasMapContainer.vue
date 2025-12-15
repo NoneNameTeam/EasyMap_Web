@@ -20,20 +20,43 @@
     ></canvas>
 
     <!-- DOM 层：悬停提示 -->
-    <div v-if="hoveredBlock" class="info-tooltip" :style="tooltipStyle">
+    <div v-if="hoveredBlock && !selectMode" class="info-tooltip" :style="tooltipStyle">
       <h4>{{ getBlockTypeName(hoveredBlock.type) }}</h4>
       <p>位置: ({{ hoveredBlock.x }}, {{ hoveredBlock.y }})</p>
       <p v-if="hoveredBlock.data?.name">{{ hoveredBlock.data.name }}</p>
-      <p v-if="hoveredBlock.data?.roadId">道路: {{ hoveredBlock.data.roadId }}</p>
+    </div>
+
+    <!-- 选择模式提示 -->
+    <div v-if="selectMode" class="select-mode-tip">
+      <el-tag :type="selectMode === 'start' ? 'success' : 'danger'" size="large">
+        {{ selectMode === 'start' ? '🚩 请点击地图选择起点' : '🏁 请点击地图选择终点' }}
+      </el-tag>
+    </div>
+
+    <!-- 起点/终点标记 -->
+    <div 
+      v-if="startPoint" 
+      class="point-marker start-marker"
+      :style="{ left: startPoint.x * blockSize + blockSize/2 + 'px', top: startPoint.y * blockSize + blockSize/2 + 'px' }"
+    >
+      🚩
+    </div>
+    <div 
+      v-if="endPoint" 
+      class="point-marker end-marker"
+      :style="{ left: endPoint.x * blockSize + blockSize/2 + 'px', top: endPoint.y * blockSize + blockSize/2 + 'px' }"
+    >
+      🏁
     </div>
 
     <!-- 调试信息 -->
     <div v-if="showDebug" class="debug-info">
-      <p>🎨 渲染模式: Canvas</p>
-      <p>🗺️ 地图块: {{ blocks.length }} 个</p>
-      <p>🚗 车辆: {{ vehicles.length }} 辆</p>
-      <p>⚡ FPS: {{ fps }}</p>
-      <p>🖱️ 鼠标: ({{ mousePos.x }}, {{ mousePos.y }})</p>
+      <p>渲染模式: Canvas</p>
+      <p>地图块: {{ blocks.length }} 个</p>
+      <p>车辆: {{ vehicles.length }} 辆</p>
+      <p>高亮路径: {{ highlightedPath.length }} 个点</p>
+      <p>FPS: {{ fps }}</p>
+      <p>鼠标: ({{ mousePos.x }}, {{ mousePos.y }})</p>
     </div>
   </div>
 </template>
@@ -48,10 +71,18 @@ const props = defineProps({
   blocks: { type: Array, default: () => [] },
   vehicles: { type: Array, default: () => [] },
   showDebug: { type: Boolean, default: false },
-  backgroundImage: { type: String, default: '' }  // ✅ 新增：背景图片
+  backgroundImage: { type: String, default: '' },
+  // ✅ 新增：高亮路径
+  highlightedPath: { type: Array, default: () => [] },
+  // ✅ 新增：选择模式 ('start' | 'end' | null)
+  selectMode: { type: String, default: null },
+  // ✅ 新增：起点
+  startPoint: { type: Object, default: null },
+  // ✅ 新增：终点
+  endPoint: { type: Object, default: null }
 })
 
-const emit = defineEmits(['block-click', 'block-hover', 'vehicle-click'])
+const emit = defineEmits(['block-click', 'block-hover', 'vehicle-click', 'point-select'])
 
 // Refs
 const containerRef = ref(null)
@@ -91,6 +122,15 @@ const tooltipStyle = computed(() => ({
   top: `${mousePos.value.y + 10}px`
 }))
 
+// ✅ 创建高亮路径的坐标集合（用于快速查找）
+const highlightedPathSet = computed(() => {
+  const set = new Set()
+  props.highlightedPath.forEach(point => {
+    set.add(`${point.x},${point.y}`)
+  })
+  return set
+})
+
 // 颜色配置
 const blockColors = {
   empty: 'transparent',
@@ -115,6 +155,10 @@ const blockBorders = {
   construction: '#e67e22',
   road_closure: '#a93226'
 }
+
+// ✅ 高亮路径颜色（畅通绿色）
+const highlightColor = 'rgba(39, 174, 96, 0.7)'
+const highlightBorder = '#27ae60'
 
 /**
  * 加载背景图片
@@ -151,14 +195,10 @@ function drawBackground() {
   if (!ctx) return
   
   if (bgImageLoaded && bgImage) {
-    // 绘制背景图片
     ctx.drawImage(bgImage, 0, 0, canvasWidth.value, canvasHeight.value)
-    
-    // 添加半透明遮罩，让地图块更清晰
     ctx.fillStyle = 'rgba(255, 255, 255, 0.1)'
     ctx.fillRect(0, 0, canvasWidth.value, canvasHeight.value)
   } else {
-    // 默认背景色
     ctx.fillStyle = '#f0f2f5'
     ctx.fillRect(0, 0, canvasWidth.value, canvasHeight.value)
   }
@@ -173,7 +213,6 @@ function drawGrid() {
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)'
   ctx.lineWidth = 0.5
   
-  // 纵向网格线
   for (let i = 0; i <= props.width; i++) {
     ctx.beginPath()
     ctx.moveTo(i * props.blockSize, 0)
@@ -181,7 +220,6 @@ function drawGrid() {
     ctx.stroke()
   }
   
-  // 横向网格线
   for (let j = 0; j <= props.height; j++) {
     ctx.beginPath()
     ctx.moveTo(0, j * props.blockSize)
@@ -200,17 +238,29 @@ function drawBlock(block, isHovered = false) {
   const y = block.y * props.blockSize
   const size = props.blockSize
   
-  // 填充
-  ctx.fillStyle = blockColors[block.type] || blockColors.normal
+  // ✅ 检查是否在高亮路径中
+  const isHighlighted = highlightedPathSet.value.has(`${block.x},${block.y}`)
+  
+  // 填充颜色
+  if (isHighlighted) {
+    ctx.fillStyle = highlightColor
+  } else {
+    ctx.fillStyle = blockColors[block.type] || blockColors.normal
+  }
   ctx.fillRect(x, y, size, size)
   
   // 边框
-  ctx.strokeStyle = blockBorders[block.type] || blockBorders.normal
-  ctx.lineWidth = isHovered ? 2 : 1
+  if (isHighlighted) {
+    ctx.strokeStyle = highlightBorder
+    ctx.lineWidth = 2
+  } else {
+    ctx.strokeStyle = blockBorders[block.type] || blockBorders.normal
+    ctx.lineWidth = isHovered ? 2 : 1
+  }
   ctx.strokeRect(x, y, size, size)
   
   // 悬停高亮
-  if (isHovered) {
+  if (isHovered && !isHighlighted) {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'
     ctx.fillRect(x, y, size, size)
   }
@@ -229,6 +279,36 @@ function drawBlock(block, isHovered = false) {
 }
 
 /**
+ * ✅ 绘制高亮路径连接线
+ */
+function drawPathLines() {
+  if (!ctx || props.highlightedPath.length < 2) return
+  
+  ctx.strokeStyle = '#27ae60'
+  ctx.lineWidth = 3
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+  
+  ctx.beginPath()
+  
+  const firstPoint = props.highlightedPath[0]
+  ctx.moveTo(
+    firstPoint.x * props.blockSize + props.blockSize / 2,
+    firstPoint.y * props.blockSize + props.blockSize / 2
+  )
+  
+  for (let i = 1; i < props.highlightedPath.length; i++) {
+    const point = props.highlightedPath[i]
+    ctx.lineTo(
+      point.x * props.blockSize + props.blockSize / 2,
+      point.y * props.blockSize + props.blockSize / 2
+    )
+  }
+  
+  ctx.stroke()
+}
+
+/**
  * 绘制所有地图块
  */
 function drawAllBlocks() {
@@ -236,22 +316,19 @@ function drawAllBlocks() {
   
   const startTime = performance.now()
   
-  // 1. 清空画布
   ctx.clearRect(0, 0, canvasWidth.value, canvasHeight.value)
-  
-  // 2. 绘制背景
   drawBackground()
-  
-  // 3. 绘制网格
   drawGrid()
   
-  // 4. 绘制所有块
   props.blocks.forEach(block => {
     const isHovered = hoveredBlock.value && 
                      hoveredBlock.value.x === block.x && 
                      hoveredBlock.value.y === block.y
     drawBlock(block, isHovered)
   })
+  
+  // ✅ 绘制路径连接线
+  drawPathLines()
   
   const endTime = performance.now()
   console.log(`🎨 重绘完成，耗时: ${(endTime - startTime).toFixed(2)}ms，块数: ${props.blocks.length}`)
@@ -263,40 +340,30 @@ function drawAllBlocks() {
 function drawVehicles() {
   if (!vehicleCtx) return
   
-  // 清空车辆层
   vehicleCtx.clearRect(0, 0, canvasWidth.value, canvasHeight.value)
   
   props.vehicles.forEach(vehicle => {
     const x = vehicle.x * props.blockSize + (vehicle.offsetX || 0)
     const y = vehicle.y * props.blockSize + (vehicle.offsetY || 0)
     
-    // 保存状态
     vehicleCtx.save()
-    
-    // 移动到车辆位置
     vehicleCtx.translate(x, y)
-    
-    // 旋转到车辆方向
     vehicleCtx.rotate((vehicle.direction * Math.PI) / 180)
     
-    // 绘制车辆（简化为三角形）
     vehicleCtx.fillStyle = '#3498db'
     vehicleCtx.beginPath()
-    vehicleCtx.moveTo(0, -15)  // 顶点
-    vehicleCtx.lineTo(-10, 10)  // 左下
-    vehicleCtx.lineTo(10, 10)   // 右下
+    vehicleCtx.moveTo(0, -15)
+    vehicleCtx.lineTo(-10, 10)
+    vehicleCtx.lineTo(10, 10)
     vehicleCtx.closePath()
     vehicleCtx.fill()
     
-    // 边框
     vehicleCtx.strokeStyle = '#2980b9'
     vehicleCtx.lineWidth = 2
     vehicleCtx.stroke()
     
-    // 恢复状态
     vehicleCtx.restore()
     
-    // 车牌号（如果需要）
     if (props.showDebug) {
       vehicleCtx.fillStyle = '#2c3e50'
       vehicleCtx.font = 'bold 10px Arial'
@@ -314,15 +381,16 @@ function handleCanvasClick(event) {
   const x = Math.floor((event.clientX - rect.left) / props.blockSize)
   const y = Math.floor((event.clientY - rect.top) / props.blockSize)
   
+  // ✅ 如果处于选择模式，发出选择事件
+  if (props.selectMode) {
+    emit('point-select', { x, y, type: props.selectMode })
+    return
+  }
+  
   const block = props.blocks.find(b => b.x === x && b.y === y)
   
-  console.log('📦 找到的块:', block)
-
   if (block) {
-    console.log('✅ 发出 block-click 事件:', block)  // ✅ 添加日志
     emit('block-click', block)
-  } else {
-    console.log('⚠️ 点击位置没有地图块')  // ✅ 添加日志
   }
 }
 
@@ -344,7 +412,6 @@ function handleCanvasMouseMove(event) {
     if (!hoveredBlock.value || hoveredBlock.value.x !== x || hoveredBlock.value.y !== y) {
       hoveredBlock.value = block
       emit('block-hover', { ...block, isEnter: true })
-      // 重绘以显示高亮
       drawAllBlocks()
     }
   } else {
@@ -391,7 +458,6 @@ function getBlockTypeName(type) {
 function animate() {
   drawVehicles()
   
-  // 计算 FPS
   frameCount++
   const now = Date.now()
   if (now - lastTime >= 1000) {
@@ -411,23 +477,19 @@ onMounted(() => {
   vehicleCtx = vehicleCanvasRef.value?.getContext('2d')
   
   if (ctx && vehicleCtx) {
-    // 启用抗锯齿
     ctx.imageSmoothingEnabled = true
     vehicleCtx.imageSmoothingEnabled = true
     
-    // 加载背景图片
     if (props.backgroundImage) {
       loadBackgroundImage(props.backgroundImage)
     } else {
       drawAllBlocks()
     }
     
-    // 启动动画
     animate()
   }
 })
 
-// 清理
 onBeforeUnmount(() => {
   if (animationFrameId) {
     cancelAnimationFrame(animationFrameId)
@@ -447,10 +509,14 @@ watch(() => props.showDebug, () => {
   drawAllBlocks()
 })
 
-// ✅ 监听背景图片变化
 watch(() => props.backgroundImage, (newUrl) => {
   loadBackgroundImage(newUrl)
 })
+
+// ✅ 监听高亮路径变化
+watch(() => props.highlightedPath, () => {
+  drawAllBlocks()
+}, { deep: true })
 </script>
 
 <style scoped>
@@ -459,7 +525,6 @@ watch(() => props.backgroundImage, (newUrl) => {
   margin: 0 auto;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
   border-radius: 8px;
-  overflow: hidden;
   background: #f0f2f5;
 }
 
@@ -501,6 +566,38 @@ watch(() => props.backgroundImage, (newUrl) => {
 .info-tooltip p {
   margin: 4px 0;
   font-size: 12px;
+}
+
+/* ✅ 选择模式提示 */
+.select-mode-tip {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* ✅ 起点/终点标记 */
+.point-marker {
+  position: absolute;
+  z-index: 50;
+  font-size: 24px;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  animation: bounce 0.5s ease-out;
+}
+
+@keyframes bounce {
+  0% { transform: translate(-50%, -150%); }
+  50% { transform: translate(-50%, -90%); }
+  100% { transform: translate(-50%, -100%); }
 }
 
 .debug-info {

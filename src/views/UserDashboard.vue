@@ -19,14 +19,6 @@
           <el-icon><MapLocation /></el-icon>
           <span>我的地图</span>
         </el-menu-item>
-        <el-menu-item index="query">
-          <el-icon><Search /></el-icon>
-          <span>实时查询</span>
-        </el-menu-item>
-        <el-menu-item index="route">
-          <el-icon><Guide /></el-icon>
-          <span>路线规划</span>
-        </el-menu-item>
         <el-menu-item index="profile">
           <el-icon><User /></el-icon>
           <span>个人信息</span>
@@ -92,28 +84,23 @@
                 {{ showDebug ? '隐藏' : '显示' }}坐标
               </el-button>
               
-              <!-- ✅ 修改按钮文案 -->
+              <!-- ✅ 路径规划按钮 -->
               <el-button 
+                type="primary" 
+                @click="openPathPlanningDialog" 
+                :icon="Guide"
+              >
+                路径规划
+              </el-button>
+
+              <!-- ✅ 清除路径按钮 -->
+              <el-button 
+                v-if="highlightedPath.length > 0"
                 type="warning" 
-                @click="simulateVehicleMovement" 
-                :icon="Van"
+                @click="clearPath" 
+                :icon="Close"
               >
-                {{ vehicles.length > 0 ? '移动我的车辆' : '显示我的车辆' }}
-              </el-button>
-              <el-button 
-                type="success" 
-                @click="startRealtimeUpdate" 
-                :icon="VideoPlay"
-                :disabled="vehicles.length === 0"
-              >
-                开始跟踪
-              </el-button>
-              <el-button 
-                type="danger" 
-                @click="stopRealtimeUpdate" 
-                :icon="VideoPause"
-              >
-                停止跟踪
+                清除路径
               </el-button>
               
               <el-button 
@@ -123,15 +110,6 @@
                 :loading="loading"
               >
                 刷新地图
-              </el-button>
-
-              <!-- ✅ 新增：诊断按钮 -->
-              <el-button 
-                  type="warning" 
-                  @click="diagnosisAPI"
-                  :icon="Cpu"
-                >
-                  API诊断
               </el-button>
 
               <el-button @click="resetMap" :icon="RefreshLeft">
@@ -148,7 +126,7 @@
             <div class="legend">
               <el-tag type="success" effect="plain">
                 <span class="legend-dot" style="background: #27ae60;"></span>
-                畅通
+                畅通 / 规划路径
               </el-tag>
               <el-tag type="info" effect="plain">
                 <span class="legend-dot" style="background: #95a5a6;"></span>
@@ -166,7 +144,6 @@
                 <span class="legend-dot" style="background: #f39c12;"></span>
                 施工
               </el-tag>
-              <!-- ✅ 新增 -->
               <el-tag type="danger" effect="plain">
                 <span class="legend-dot" style="background: #c0392b;"></span>
                 道路封闭
@@ -175,7 +152,6 @@
                 <span class="legend-dot" style="background: #34495e;"></span>
                 建筑
               </el-tag>
-              <!-- ✅ 新增 -->
               <el-tag type="info" effect="plain">
                 <span class="legend-dot" style="background: #3498db;"></span>
                 水域
@@ -191,90 +167,54 @@
                 :height="mapHeight"
                 :block-size="blockSize"
                 :blocks="mapBlocks"
-                :vehicles="vehicles"
+                :vehicles="[]"
                 :show-debug="showDebug"
                 :background-image="backgroundImage"
+                :highlighted-path="highlightedPath"
+                :select-mode="selectMode"
+                :start-point="startPoint"
+                :end-point="endPoint"
                 @block-click="handleBlockClick"
                 @block-hover="handleBlockHover"
-                @vehicle-click="handleVehicleClick"
+                @point-select="handlePointSelect"
               />
             </div>
           </el-card>
 
-          <!-- 我的车辆信息弹窗 -->
-          <el-dialog 
-            v-model="showVehicleDialog" 
-            title="我的车辆信息"  
-            width="500px"
-          >
-            <el-descriptions :column="2" border v-if="selectedVehicle">
-              <el-descriptions-item label="车牌号" :span="2">
-                <el-tag type="success" size="large">{{ selectedVehicle.plateNumber }}</el-tag>  <!-- ✅ 改为绿色 -->
+          <!-- 路径信息卡片 -->
+          <el-card v-if="pathInfo" shadow="hover" class="path-info-card">
+            <template #header>
+              <span><el-icon><Guide /></el-icon> 路径规划结果</span>
+            </template>
+            <el-descriptions :column="2" border>
+              <el-descriptions-item label="起点">
+                ({{ startPoint?.x }}, {{ startPoint?.y }})
               </el-descriptions-item>
-              <el-descriptions-item label="车辆类型">
-                {{ getVehicleTypeName(selectedVehicle.type) }}
+              <el-descriptions-item label="终点">
+                ({{ endPoint?.x }}, {{ endPoint?.y }})
               </el-descriptions-item>
-              <el-descriptions-item label="当前速度">
-                <el-tag :type="getVehicleSpeedTagType(selectedVehicle.speed)">  <!-- ✅ 修改函数名 -->
-                  {{ selectedVehicle.speed }} km/h
+              <el-descriptions-item label="路径距离">
+                <el-tag type="info">{{ pathInfo.distance?.toFixed(2) || '-' }} 米</el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="预计时间">
+                <el-tag type="success">{{ pathInfo.estimatedTime?.toFixed(2) || '-' }} 分钟</el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="途经道路" :span="2">
+                <el-tag 
+                  v-for="road in pathInfo.roads" 
+                  :key="road.id" 
+                  type="primary" 
+                  style="margin-right: 5px;"
+                >
+                  {{ road.name }}
                 </el-tag>
+                <span v-if="!pathInfo.roads?.length">-</span>
               </el-descriptions-item>
-              <el-descriptions-item label="当前位置" :span="2">
-                ({{ selectedVehicle.x }}, {{ selectedVehicle.y }})
-              </el-descriptions-item>
-              <el-descriptions-item label="行驶方向" :span="2">
-                {{ getDirectionName(selectedVehicle.direction) }}
+              <el-descriptions-item label="关键点数量">
+                {{ pathInfo.keyPointCount || highlightedPath.length }} 个
               </el-descriptions-item>
             </el-descriptions>
-            
-            <template #footer>
-              <el-button type="success" @click="showVehicleDialog = false">
-                确定
-              </el-button>
-            </template>
-          </el-dialog>
-          <!-- 统计卡片 -->
-          <!-- <el-row :gutter="20" class="stats-row">
-            <el-col :xs="24" :sm="12" :md="6">
-              <el-card shadow="hover" class="stat-card smooth-card">
-                <el-statistic title="畅通路段" :value="trafficStats.smooth">
-                  <template #prefix>
-                    <el-icon color="#27ae60"><Promotion /></el-icon>
-                  </template>
-                </el-statistic>
-              </el-card>
-            </el-col>
-            <el-col :xs="24" :sm="12" :md="6">
-              <el-card shadow="hover" class="stat-card normal-card">
-                <el-statistic title="正常路段" :value="trafficStats.normal">
-                  <template #prefix>
-                    <el-icon color="#3498db"><Location /></el-icon>
-                  </template>
-                </el-statistic>
-              </el-card>
-            </el-col>
-            <el-col :xs="24" :sm="12" :md="6">
-              <el-card shadow="hover" class="stat-card congested-card">
-                <el-statistic title="拥堵路段" :value="trafficStats.congested">
-                  <template #prefix>
-                    <el-icon color="#e74c3c"><WarningFilled /></el-icon>
-                  </template>
-                </el-statistic>
-              </el-card>
-            </el-col>
-            <el-col :xs="24" :sm="12" :md="6">
-              <el-card shadow="hover" class="stat-card alert-card">
-                <el-statistic 
-                  title="事故/施工" 
-                  :value="trafficStats.accident + trafficStats.construction"
-                >
-                  <template #prefix>
-                    <el-icon color="#e67e22"><Warning /></el-icon>
-                  </template>
-                </el-statistic>
-              </el-card>
-            </el-col>
-          </el-row> -->
+          </el-card>
 
           <!-- 地图块总数统计 -->
           <el-row :gutter="20">
@@ -291,26 +231,6 @@
               </el-card>
             </el-col>
           </el-row>
-        </div>
-
-        <!-- 实时查询 -->
-        <div v-if="currentTab === 'query'">
-          <el-card shadow="never">
-            <template #header>
-              <span><el-icon><Search /></el-icon> 实时查询</span>
-            </template>
-            <el-empty description="查询功能开发中" />
-          </el-card>
-        </div>
-
-        <!-- 路线规划 -->
-        <div v-if="currentTab === 'route'">
-          <el-card shadow="never">
-            <template #header>
-              <span><el-icon><Guide /></el-icon> 路线规划</span>
-            </template>
-            <el-empty description="路线规划功能开发中" />
-          </el-card>
         </div>
 
         <!-- 个人信息 -->
@@ -341,43 +261,25 @@
         <el-descriptions-item label="区域ID">
           <el-tag>{{ selectedBlock.id }}</el-tag>
         </el-descriptions-item>
-        
-        <!-- ✅ 新增：显示原始 block 类型 -->
         <el-descriptions-item label="区块类别" v-if="selectedBlock.data?.block">
           <el-tag>{{ selectedBlock.data.block }}</el-tag>
         </el-descriptions-item>
-        
         <el-descriptions-item label="坐标位置">
           ({{ selectedBlock.x }}, {{ selectedBlock.y }})
         </el-descriptions-item>
-        
         <el-descriptions-item label="道路ID" v-if="selectedBlock.data?.roadId">
           <el-tag type="info">{{ selectedBlock.data.roadId }}</el-tag>
         </el-descriptions-item>
-        
         <el-descriptions-item label="交通状况" v-if="selectedBlock.data?.traffic">
           <el-tag :type="getTrafficTagType(selectedBlock.data.traffic)">
             {{ getTrafficName(selectedBlock.data.traffic) }}
           </el-tag>
         </el-descriptions-item>
-        
-        <!-- 事件信息 -->
         <el-descriptions-item label="事件" v-if="selectedBlock.data?.event && selectedBlock.data.event !== 'NONE'">
           <el-tag type="warning" effect="dark">
             {{ getEventName(selectedBlock.data.event) }}
           </el-tag>
         </el-descriptions-item>
-        
-        <!-- <el-descriptions-item label="通行速度" v-if="selectedBlock.data?.speed !== undefined">
-          <el-tag :type="getSpeedTagType(selectedBlock.data.speed)">
-            {{ selectedBlock.data.speed }} km/h
-          </el-tag>
-        </el-descriptions-item> -->
-        
-        <!-- <el-descriptions-item label="更新时间" v-if="selectedBlock.data?.updatedAt">
-          {{ formatTime(selectedBlock.data.updatedAt) }}
-        </el-descriptions-item> -->
-        
         <el-descriptions-item label="区域名称" v-if="selectedBlock.data?.name">
           {{ selectedBlock.data.name }}
         </el-descriptions-item>
@@ -389,21 +291,81 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- ✅ 路径规划弹窗 -->
+    <el-dialog 
+      v-model="showPathDialog" 
+      title="路径规划" 
+      width="500px"
+      :close-on-click-modal="false"
+    >
+      <el-form :model="pathForm" label-width="100px">
+        <el-form-item label="起点">
+          <el-input 
+            :value="startPoint ? `(${startPoint.x}, ${startPoint.y})` : '未选择'" 
+            readonly
+            placeholder="请在地图上点击选择起点"
+          >
+            <template #append>
+              <el-button 
+                :type="selectMode === 'start' ? 'success' : 'primary'"
+                @click="startSelectPoint('start')"
+              >
+                {{ selectMode === 'start' ? '选择中...' : '选择' }}
+              </el-button>
+            </template>
+          </el-input>
+        </el-form-item>
+        
+        <el-form-item label="终点">
+          <el-input 
+            :value="endPoint ? `(${endPoint.x}, ${endPoint.y})` : '未选择'" 
+            readonly
+            placeholder="请在地图上点击选择终点"
+          >
+            <template #append>
+              <el-button 
+                :type="selectMode === 'end' ? 'danger' : 'primary'"
+                @click="startSelectPoint('end')"
+              >
+                {{ selectMode === 'end' ? '选择中...' : '选择' }}
+              </el-button>
+            </template>
+          </el-input>
+        </el-form-item>
+
+        <el-form-item label="规划选项">
+          <el-checkbox v-model="pathForm.considerTraffic">考虑实时交通</el-checkbox>
+          <el-checkbox v-model="pathForm.avoidEvents">避开事故/施工</el-checkbox>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="cancelPathPlanning">取消</el-button>
+        <el-button 
+          type="primary" 
+          @click="submitPathPlanning"
+          :loading="pathLoading"
+          :disabled="!startPoint || !endPoint"
+        >
+          开始规划
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  User, MapLocation, Search, Guide, Back, ArrowDown, SwitchButton,
-  Location, View, Hide, Refresh, RefreshLeft, Grid, Promotion, WarningFilled, Warning, Van
+  User, MapLocation, Back, ArrowDown, SwitchButton,
+  View, Hide, Refresh, RefreshLeft, Grid, Guide, Close
 } from '@element-plus/icons-vue'
-import MapContainer from '../components/map/MapContainer.vue'
 import CanvasMapContainer from '../components/map/CanvasMapContainer.vue'
 import mapApi from '../api/map'
-// import vehicleApi from '../api/vehicle'
+import pathApi from '../api/path'
 import mapBg from '@/assets/bgi.png'
 
 const router = useRouter()
@@ -425,10 +387,10 @@ const mapBlocks = ref([])
 // 加载状态
 const loading = ref(false)
 
-// ✅ 新增：加载进度
+// 加载进度
 const loadingProgress = ref({
   current: 0,
-  total: 25000,  // 预估总数
+  total: 25000,
   percentage: 0,
   pageCount: 0
 })
@@ -437,15 +399,19 @@ const loadingProgress = ref({
 const selectedBlock = ref(null)
 const showBlockDialog = ref(false)
 
-// 车辆数据
-const vehicles = ref([])
+// ✅ 路径规划相关
+const showPathDialog = ref(false)
+const pathLoading = ref(false)
+const selectMode = ref(null)  // 'start' | 'end' | null
+const startPoint = ref(null)
+const endPoint = ref(null)
+const highlightedPath = ref([])
+const pathInfo = ref(null)
 
-// 定时器
-let updateTimer = null
-
-// 选中的车辆
-const selectedVehicle = ref(null)
-const showVehicleDialog = ref(false)
+const pathForm = ref({
+  considerTraffic: true,
+  avoidEvents: true
+})
 
 // 切换标签
 const switchTab = (tab) => {
@@ -464,7 +430,6 @@ const goBack = () => {
 const loadMapData = async () => {
   loading.value = true
   
-  // ✅ 重置进度
   loadingProgress.value = {
     current: 0,
     total: 25000,
@@ -475,34 +440,23 @@ const loadMapData = async () => {
   try {
     console.log('📍 开始加载地图数据...')
     
-    // ✅ 使用进度回调
     const data = await mapApi.getAllMapData({}, (count, hasMore, pageCount) => {
       loadingProgress.value = {
         current: count,
-        total: 25000,  // 预估值
-        percentage: Math.min((count / 25000) * 100, 99),  // 最多显示 99%
+        total: 25000,
+        percentage: Math.min((count / 25000) * 100, 99),
         pageCount: pageCount
       }
-      console.log(`📊 加载进度: ${count} / ~25000 (第 ${pageCount} 页)`)
     })
     
-    console.log('✅ 收到地图数据:', data.length, '条')
-    console.log('📦 原始数据示例:', data.slice(0, 3))
-    
-    // ✅ 检查数据是否为空
     if (!data || data.length === 0) {
       ElMessage.warning('后端返回的地图数据为空')
       loadingProgress.value.percentage = 100
       return
     }
     
-    // 处理后端数据并转换为前端格式
     mapBlocks.value = processMapData(data)
     
-    console.log('🗺️ 处理后的地图块数量:', mapBlocks.value.length)
-    console.log('🔍 处理后数据示例:', mapBlocks.value.slice(0, 3))
-    
-    // ✅ 更新进度为 100%
     loadingProgress.value = {
       current: mapBlocks.value.length,
       total: mapBlocks.value.length,
@@ -514,70 +468,8 @@ const loadMapData = async () => {
   } catch (error) {
     console.error('❌ 加载地图数据失败:', error)
     ElMessage.error(`加载失败: ${error.message}`)
-    
-    // ✅ 开发测试：加载失败时使用模拟数据
-    // loadMockMapData()
   } finally {
     loading.value = false
-  }
-}
-
-import { Cpu } from '@element-plus/icons-vue'  // ✅ 添加图标导入
-
-/**
- * API 诊断函数
- */
-const diagnosisAPI = async () => {
-  console.log('🔧 开始 API 诊断...')
-  
-  ElMessage.info('正在进行 API 诊断...')
-  
-  try {
-    // 1. 测试健康检查
-    console.log('1️⃣ 测试健康检查 /health')
-    const health = await mapApi.checkHealth()
-    console.log('✅ 健康检查成功:', health)
-    
-    // 2. 测试获取第一页数据
-    console.log('2️⃣ 测试获取第一页数据 /maps/data?limit=10')
-    const firstPage = await mapApi.getMapData({ limit: 10 })
-    console.log('✅ 第一页数据:', firstPage)
-    console.log('  - items数量:', firstPage.items?.length || 0)
-    console.log('  - nextCursor:', firstPage.nextCursor)
-    console.log('  - hasNextPage:', firstPage.hasNextPage)
-    
-    if (firstPage.items && firstPage.items.length > 0) {
-      console.log('  - 第一条数据示例:', firstPage.items[0])
-    }
-    
-    // 3. 测试按坐标查询
-    if (firstPage.items && firstPage.items.length > 0) {
-      const testItem = firstPage.items[0]
-      console.log(`3️⃣ 测试按坐标查询 /maps/${testItem.x}/${testItem.y}`)
-      const coordData = await mapApi.getMapByCoord(testItem.x, testItem.y)
-      console.log('✅ 坐标查询结果:', coordData)
-    }
-    
-    // 4. 显示诊断结果
-    const message = `
-      ✅ API 诊断完成！
-      
-      健康状态: ${health.status}
-      第一页数据: ${firstPage.items?.length || 0} 条
-      是否有下一页: ${firstPage.hasNextPage ? '是' : '否'}
-      
-      详细信息请查看控制台
-    `
-    
-    ElMessage.success({
-      message: message,
-      duration: 5000,
-      showClose: true
-    })
-    
-  } catch (error) {
-    console.error('❌ API 诊断失败:', error)
-    ElMessage.error(`诊断失败: ${error.message}`)
   }
 }
 
@@ -585,28 +477,11 @@ const diagnosisAPI = async () => {
  * 处理后端返回的地图数据
  */
 const processMapData = (data) => {
-  console.log('🔄 开始处理地图数据...')
-  console.log('📥 原始数据数量:', data?.length || 0)
-  
   if (!Array.isArray(data)) {
-    console.error('❌ 地图数据格式错误，应为数组，实际类型:', typeof data)
     return []
   }
   
-  if (data.length === 0) {
-    console.warn('⚠️ 原始数据为空数组')
-    return []
-  }
-  
-  console.log('📋 原始数据示例（前3条）:', data.slice(0, 3))
-  
-  const processed = data.map((block, index) => {
-    // 每处理 5000 条打印一次进度
-    if (index % 5000 === 0) {
-      console.log(`⏳ 处理进度: ${index} / ${data.length}`)
-    }
-    
-    // 确定块类型
+  const processed = data.map((block) => {
     let type = 'empty'
     
     if (block.block === 'BUILDING') {
@@ -632,15 +507,6 @@ const processMapData = (data) => {
       type = trafficMap[block.traffic] || 'normal'
     }
     
-    let speed = 60
-    if (block.traffic === 'SMOOTH') speed = 80
-    else if (block.traffic === 'NORMAL') speed = 60
-    else if (block.traffic === 'CONGESTED') speed = 20
-    else if (block.traffic === 'UNKNOWN') speed = 40
-    else if (block.event === 'ACCIDENT') speed = 0
-    else if (block.event === 'CONSTRUCTION') speed = 10
-    else if (block.event === 'ROAD_CLOSURE') speed = 0
-    
     return {
       x: Number(block.x) || 0,
       y: Number(block.y) || 0,
@@ -651,30 +517,16 @@ const processMapData = (data) => {
         traffic: block.traffic,
         event: block.event,
         block: block.block,
-        speed: speed,
         updatedAt: block.updatedAt,
         name: getBlockName(type, block)
       }
     }
   })
   
-  console.log('✅ 数据处理完成，处理后数量:', processed.length)
-  
-  // 过滤坐标范围
-  const filtered = processed.filter(block => {
+  return processed.filter(block => {
     return block.x >= 0 && block.x < mapWidth.value &&
            block.y >= 0 && block.y < mapHeight.value
   })
-  
-  const filteredCount = processed.length - filtered.length
-  if (filteredCount > 0) {
-    console.log(`🚫 过滤掉 ${filteredCount} 个超出范围的块`)
-  }
-  
-  console.log('📊 最终返回数量:', filtered.length)
-  console.log('📋 处理后数据示例（前3条）:', filtered.slice(0, 3))
-  
-  return filtered
 }
 
 /**
@@ -682,234 +534,122 @@ const processMapData = (data) => {
  */
 const getBlockName = (type, block) => {
   if (type === 'building') return '建筑物'
-  if (type === 'water') return '水域'  // ✅ 新增
-  if (type === 'road_closure') return '道路封闭'  // ✅ 新增
+  if (type === 'water') return '水域'
+  if (type === 'road_closure') return '道路封闭'
   if (block.roadId) return `道路 ${block.roadId}`
   return '区域'
 }
 
 /**
- * 获取交通状况标签类型
+ * ✅ 打开路径规划对话框
  */
-const getTrafficTagType = (traffic) => {
-  const typeMap = {
-    'SMOOTH': 'success',
-    'NORMAL': 'info',
-    'CONGESTED': 'danger',
-    'UNKNOWN': 'warning'  // ✅ 新增
-  }
-  return typeMap[traffic] || 'info'
+const openPathPlanningDialog = () => {
+  showPathDialog.value = true
+  // 保留之前选择的起点终点
 }
 
 /**
- * 获取交通状况名称
+ * ✅ 开始选择点
  */
-const getTrafficName = (traffic) => {
-  const nameMap = {
-    'SMOOTH': '畅通',
-    'NORMAL': '正常',
-    'CONGESTED': '拥堵',
-    'UNKNOWN': '未知'  // ✅ 新增
-  }
-  return nameMap[traffic] || traffic
+const startSelectPoint = (type) => {
+  selectMode.value = type
+  showPathDialog.value = false  // 暂时关闭对话框以便点击地图
+  ElMessage.info(`请在地图上点击选择${type === 'start' ? '起点' : '终点'}`)
 }
 
 /**
- * 获取事件名称
+ * ✅ 处理地图点选择
  */
-const getEventName = (event) => {
-  const nameMap = {
-    'NONE': '无事件',  // ✅ 新增
-    'ACCIDENT': '交通事故',
-    'CONSTRUCTION': '道路施工',
-    'ROAD_CLOSURE': '道路封闭'
+const handlePointSelect = (pointInfo) => {
+  const { x, y, type } = pointInfo
+  
+  if (type === 'start') {
+    startPoint.value = { x, y }
+    ElMessage.success(`起点已选择: (${x}, ${y})`)
+  } else if (type === 'end') {
+    endPoint.value = { x, y }
+    ElMessage.success(`终点已选择: (${x}, ${y})`)
   }
-  return nameMap[event] || event
+  
+  selectMode.value = null
+  showPathDialog.value = true  // 重新打开对话框
 }
 
 /**
- * 从后端获取用户自己的车辆位置
+ * ✅ 取消路径规划
  */
-const fetchVehiclesPosition = async () => {
+const cancelPathPlanning = () => {
+  showPathDialog.value = false
+  selectMode.value = null
+}
+
+/**
+ * ✅ 提交路径规划
+ */
+const submitPathPlanning = async () => {
+  if (!startPoint.value || !endPoint.value) {
+    ElMessage.warning('请先选择起点和终点')
+    return
+  }
+  
+  pathLoading.value = true
+  
   try {
-    // ✅ 调用用户车辆 API（只获取当前用户的车辆）
-    const data = await vehicleApi.getMyVehicle()
+    const requestData = {
+      startX: startPoint.value.x,
+      startY: startPoint.value.y,
+      targetX: endPoint.value.x,
+      targetY: endPoint.value.y,
+      considerTraffic: pathForm.value.considerTraffic,
+      avoidEvents: pathForm.value.avoidEvents,
+      preferredSpeed: 50
+    }
     
-    // 只显示用户自己的车辆
-    if (data && data.vehicle) {
-      const v = data.vehicle
-      vehicles.value = [{
-        id: v.id,
-        plateNumber: v.plateNumber,
-        x: Math.floor(v.x),
-        y: Math.floor(v.y),
-        offsetX: ((v.x % 1) * blockSize.value) || 0,
-        offsetY: ((v.y % 1) * blockSize.value) || 0,
-        speed: v.speed || 0,
-        direction: v.direction || 0,
-        type: v.type || 'car',
-        status: v.status || 'moving',
-        showTrail: true,
-        transitionDuration: 1000
-      }]
+    console.log('📍 发送路径规划请求:', requestData)
+    
+    const result = await pathApi.calculateRoute(requestData)
+    
+    console.log('✅ 路径规划结果:', result)
+    
+    // 处理返回的路径数据
+    if (result && result.path && result.path.length > 0) {
+      // 将路径转换为坐标点数组
+      highlightedPath.value = result.path.map(point => ({
+        x: Math.round(point.x),
+        y: Math.round(point.y)
+      }))
       
-      console.log(`✅ 已更新我的车辆位置: ${v.plateNumber}`)
+      pathInfo.value = {
+        distance: result.distance,
+        estimatedTime: result.estimatedTime,
+        roads: result.roads || [],
+        keyPointCount: result.keyPointCount || result.path.length
+      }
+      
+      ElMessage.success(`路径规划成功！共 ${highlightedPath.value.length} 个关键点`)
+      showPathDialog.value = false
     } else {
-      vehicles.value = []
-      console.log('当前没有车辆数据')
+      ElMessage.warning('未找到可用路径')
     }
   } catch (error) {
-    console.error('获取车辆位置失败:', error)
-    // 不显示错误提示，避免频繁弹窗
+    console.error('❌ 路径规划失败:', error)
+    ElMessage.error(`路径规划失败: ${error.message}`)
+  } finally {
+    pathLoading.value = false
   }
 }
 
 /**
- * 模拟车辆移动（测试用 - 只显示用户自己的车）
+ * ✅ 清除路径
  */
-const simulateVehicleMovement = () => {
-  if (vehicles.value.length === 0) {
-    // 添加用户自己的测试车辆（只有一辆）
-    vehicles.value = [
-      {
-        id: 1,
-        plateNumber: '粤A88888',
-        x: 7,
-        y: 7,
-        offsetX: 0,
-        offsetY: 0,
-        speed: 60,
-        direction: 0,
-        type: 'car',
-        status: 'moving',
-        showTrail: true,
-        transitionDuration: 1000
-      }
-    ]
-    ElMessage.success('已加载我的车辆')
-  } else {
-    // 移动用户的车辆
-    const vehicle = vehicles.value[0]
-    const directions = [
-      { dx: 1, dy: 0, angle: 90 },
-      { dx: -1, dy: 0, angle: 270 },
-      { dx: 0, dy: 1, angle: 180 },
-      { dx: 0, dy: -1, angle: 0 }
-    ]
-    
-    const move = directions[Math.floor(Math.random() * directions.length)]
-    
-    let newX = vehicle.x + move.dx
-    let newY = vehicle.y + move.dy
-    
-    newX = Math.max(0, Math.min(mapWidth.value - 1, newX))
-    newY = Math.max(0, Math.min(mapHeight.value - 1, newY))
-    
-    vehicles.value = [{
-      ...vehicle,
-      x: newX,
-      y: newY,
-      direction: move.angle,
-      speed: Math.floor(Math.random() * 40) + 40
-    }]
-    ElMessage.info('车辆位置已更新')
-  }
+const clearPath = () => {
+  highlightedPath.value = []
+  pathInfo.value = null
+  startPoint.value = null
+  endPoint.value = null
+  ElMessage.success('已清除路径')
 }
 
-/**
- * 开始实时更新（定时轮询）
- */
-const startRealtimeUpdate = () => {
-  if (vehicles.value.length === 0) {
-    ElMessage.warning('请先显示车辆')
-    return
-  }
-  
-  if (updateTimer) {
-    ElMessage.warning('已在跟踪中')
-    return
-  }
-  
-  // ✅ 立即执行一次
-  fetchVehiclesPosition()
-  // 或者使用模拟数据测试：
-  // simulateVehicleMovement()
-  
-  // ✅ 设置定时器，每 3 秒轮询一次
-  updateTimer = setInterval(() => {
-    // 生产环境：调用真实 API
-    fetchVehiclesPosition()
-    
-    // 测试环境：使用模拟数据
-    // simulateVehicleMovement()
-  }, 500)  // ✅ 3000ms = 3秒轮询一次
-  
-  ElMessage.success('开始跟踪我的车辆（每3秒）')
-}
-
-/**
- * 停止实时更新
- */
-const stopRealtimeUpdate = () => {
-  if (updateTimer) {
-    clearInterval(updateTimer)
-    updateTimer = null
-    ElMessage.info('已停止跟踪')
-  } else {
-    ElMessage.warning('当前未在跟踪')
-  }
-}
-
-/**
- * 处理车辆点击
- */
-const handleVehicleClick = (vehicleInfo) => {
-  selectedVehicle.value = vehicleInfo
-  showVehicleDialog.value = true
-}
-
-/**
- * 处理车辆位置更新
- */
-const handleVehiclePositionUpdate = (positionInfo) => {
-  console.log('车辆位置更新:', positionInfo)
-}
-
-/**
- * 获取车辆类型名称
- */
-const getVehicleTypeName = (type) => {
-  const names = {
-    car: '小汽车',
-    truck: '货车',
-    bus: '公交车'
-  }
-  return names[type] || type
-}
-
-/**
- * 获取方向名称
- */
-const getDirectionName = (direction) => {
-  if (direction >= 337.5 || direction < 22.5) return '北 ↑'
-  if (direction >= 22.5 && direction < 67.5) return '东北 ↗'
-  if (direction >= 67.5 && direction < 112.5) return '东 →'
-  if (direction >= 112.5 && direction < 157.5) return '东南 ↘'
-  if (direction >= 157.5 && direction < 202.5) return '南 ↓'
-  if (direction >= 202.5 && direction < 247.5) return '西南 ↙'
-  if (direction >= 247.5 && direction < 292.5) return '西 ←'
-  if (direction >= 292.5 && direction < 337.5) return '西北 ↖'
-  return '未知'
-}
-
-/**
- * 获取车辆速度标签类型
- */
-const getVehicleSpeedTagType = (speed) => {
-  if (speed >= 60) return 'success'
-  if (speed >= 30) return 'warning'
-  return 'danger'
-}
 /**
  * 初始化地图
  */
@@ -922,8 +662,7 @@ const initMap = () => {
  */
 const resetMap = () => {
   initMap()
-  vehicles.value = []
-  stopRealtimeUpdate()
+  clearPath()
   ElMessage.success('地图已清空')
 }
 
@@ -949,13 +688,13 @@ const getBlockTypeName = (type) => {
   const names = {
     empty: '空白区域',
     building: '建筑物',
-    water: '水域',  // ✅ 新增
+    water: '水域',
     normal: '普通道路',
     smooth: '畅通道路',
     congested: '拥堵路段',
     accident: '事故区域',
     construction: '施工区域',
-    road_closure: '道路封闭'  // ✅ 新增
+    road_closure: '道路封闭'
   }
   return names[type] || type
 }
@@ -970,61 +709,62 @@ const getBlockTagType = (type) => {
     congested: 'danger',
     accident: 'warning',
     construction: 'warning',
-    road_closure: 'danger',  // ✅ 新增
+    road_closure: 'danger',
     building: '',
-    water: 'info'  // ✅ 新增
+    water: 'info'
   }
   return types[type] || 'info'
 }
 
 /**
- * 计算交通统计
+ * 获取交通状况标签类型
  */
-const trafficStats = computed(() => {
-  const stats = {
-    smooth: 0,
-    normal: 0,
-    congested: 0,
-    accident: 0,
-    construction: 0,
-    road_closure: 0,  // ✅ 新增
-    building: 0,
-    water: 0  // ✅ 新增
+const getTrafficTagType = (traffic) => {
+  const typeMap = {
+    'SMOOTH': 'success',
+    'NORMAL': 'info',
+    'CONGESTED': 'danger',
+    'UNKNOWN': 'warning'
   }
-  
-  mapBlocks.value.forEach(block => {
-    if (stats[block.type] !== undefined) {
-      stats[block.type]++
-    }
-  })
-  
-  return stats
-})
+  return typeMap[traffic] || 'info'
+}
 
+/**
+ * 获取交通状况名称
+ */
+const getTrafficName = (traffic) => {
+  const nameMap = {
+    'SMOOTH': '畅通',
+    'NORMAL': '正常',
+    'CONGESTED': '拥堵',
+    'UNKNOWN': '未知'
+  }
+  return nameMap[traffic] || traffic
+}
+
+/**
+ * 获取事件名称
+ */
+const getEventName = (event) => {
+  const nameMap = {
+    'NONE': '无事件',
+    'ACCIDENT': '交通事故',
+    'CONSTRUCTION': '道路施工',
+    'ROAD_CLOSURE': '道路封闭'
+  }
+  return nameMap[event] || event
+}
 
 /**
  * 页面加载时初始化
  */
 onMounted(() => {
   ElMessage.success('欢迎使用用户中心')
-  // 自动加载地图数据
   loadMapData()
-  startRealtimeUpdate()  // 可选：自动启动车辆更新
-})
-
-/**
- * 页面卸载时清理定时器
- */
-onUnmounted(() => {
-  stopRealtimeUpdate()
 })
 </script>
 
 <style scoped>
-.vehicle-stat-card {
-  border-left: 4px solid #67B3DB;
-}
-
 .user-dashboard {
   display: flex;
   width: 100%;
@@ -1190,40 +930,15 @@ onUnmounted(() => {
   padding: 10px;
 }
 
-/* 统计行 */
-/* .stats-row {
+/* ✅ 路径信息卡片 */
+.path-info-card {
   margin-bottom: 20px;
-}
-
-.stat-card {
-  transition: all 0.3s;
-  border-left: 4px solid #16a085;
-}
-
-.stat-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 16px rgba(22, 160, 133, 0.2);
-}
-
-.smooth-card {
-  border-left-color: #27ae60;
-}
-
-.normal-card {
-  border-left-color: #3498db;
-}
-
-.congested-card {
-  border-left-color: #e74c3c;
-}
-
-.alert-card {
-  border-left-color: #e67e22;
+  border-left: 4px solid #27ae60;
 }
 
 .total-blocks-card {
   border-left: 4px solid #16a085;
-} */
+}
 
 /* 响应式 */
 @media (max-width: 768px) {

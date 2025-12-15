@@ -25,7 +25,7 @@ export default {
     let hasNextPage = true
     let pageCount = 0
     
-    console.log('🚀 开始加载地图数据...')
+    console.log(' 开始加载地图数据...')
     
     try {
       while (hasNextPage) {
@@ -33,7 +33,7 @@ export default {
         
         const params = {
           ...filters,
-          limit: 500,  // ✅ 增加每页数量到 500（原来是 100）
+          limit: 1000,
           ...(cursor && { cursor })
         }
         
@@ -41,55 +41,58 @@ export default {
         
         const response = await request.get('/maps/data', params)
         
-        console.log(`✅ 第 ${pageCount} 页加载成功:`, {
-          itemsCount: response.items?.length || 0,
-          nextCursor: response.nextCursor,
-          hasNextPage: response.hasNextPage
-        })
+        console.log(`✅ 第 ${pageCount} 页响应:`, response)
         
-        // ✅ 检查响应格式
+        // ✅ 响应拦截器已经解包，这里直接使用
+        // response 格式: { items: [...], nextCursor: '...', hasNextPage: true }
+        
         if (!response || typeof response !== 'object') {
           console.error('❌ 响应格式错误:', response)
           break
         }
         
-        // ✅ 安全地获取 items
         const items = response.items || []
         
+        console.log(` 第 ${pageCount} 页数据:`, {
+          itemsCount: items.length,
+          nextCursor: response.nextCursor,
+          hasNextPage: response.hasNextPage
+        })
+        
         if (items.length === 0 && pageCount === 1) {
-          console.warn('⚠️ 第一页没有数据')
+          console.warn(' 第一页没有数据')
           break
         }
         
         allItems = allItems.concat(items)
         cursor = response.nextCursor
-        hasNextPage = response.hasNextPage === true  // ✅ 明确判断布尔值
+        hasNextPage = response.hasNextPage === true
         
         // 调用进度回调
         if (onProgress && typeof onProgress === 'function') {
           onProgress(allItems.length, hasNextPage, pageCount)
         }
         
-        console.log(`📊 当前总数: ${allItems.length}，是否有下一页: ${hasNextPage}`)
+        console.log(` 当前总数: ${allItems.length}，是否有下一页: ${hasNextPage}`)
         
-        // ✅ 安全检查：防止无限循环
-        if (pageCount > 1000) {  // 最多加载 1000 页（500 * 1000 = 50万条）
-          console.warn('⚠️ 达到最大页数限制，停止加载')
+        // 安全检查：防止无限循环
+        if (pageCount > 1000) {
+          console.warn(' 达到最大页数限制，停止加载')
           break
         }
         
-        // ✅ 如果没有下一页或没有 cursor，停止
+        // 如果没有下一页或没有 cursor，停止
         if (!hasNextPage || !cursor) {
-          console.log('✅ 所有数据加载完成')
+          console.log(' 所有数据加载完成')
           break
         }
       }
       
-      console.log(`🎉 加载完成！共 ${pageCount} 页，总计 ${allItems.length} 条数据`)
+      console.log(` 加载完成！共 ${pageCount} 页，总计 ${allItems.length} 条数据`)
       return allItems
       
     } catch (error) {
-      console.error('❌ 加载地图数据失败:', error)
+      console.error(' 加载地图数据失败:', error)
       throw error
     }
   },

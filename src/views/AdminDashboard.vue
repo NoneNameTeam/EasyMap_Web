@@ -281,7 +281,7 @@
                 <el-input-number 
                   v-model="mapWidth" 
                   :min="10" 
-                  :max="30" 
+                  :max="160" 
                   controls-position="right"
                 />
               </el-form-item>
@@ -290,7 +290,7 @@
                 <el-input-number 
                   v-model="mapHeight" 
                   :min="10" 
-                  :max="30" 
+                  :max="160" 
                   controls-position="right"
                 />
               </el-form-item>
@@ -298,7 +298,7 @@
               <el-form-item label="块大小（像素）">
                 <el-input-number 
                   v-model="blockSize" 
-                  :min="30" 
+                  :min="1" 
                   :max="100" 
                   :step="10"
                   controls-position="right"
@@ -449,7 +449,7 @@ const loading = ref(false)
 // ✅ 新增：加载进度
 const loadingProgress = ref({
   current: 0,
-  total: 25000,  // 预估总数
+  total: 25600,  // 预估总数
   percentage: 0,
   pageCount: 0
 })
@@ -1175,9 +1175,9 @@ const applySettings = () => {
  * 恢复默认设置
  */
 const resetSettings = () => {
-  mapWidth.value = 20
-  mapHeight.value = 15
-  blockSize.value = 50
+  mapWidth.value = 160
+  mapHeight.value = 160
+  blockSize.value = 4
   ElMessage.success('已恢复默认设置')
 }
 
