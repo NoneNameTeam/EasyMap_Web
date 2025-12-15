@@ -84,7 +84,16 @@
                 {{ showDebug ? '隐藏' : '显示' }}坐标
               </el-button>
               
-              <!-- ✅ 路径规划按钮 -->
+              <!-- ✅ 实时监控按钮 -->
+              <el-button 
+                :type="isRealtimeEnabled ? 'danger' : 'success'" 
+                @click="toggleRealtimeUpdate"
+                :icon="isRealtimeEnabled ? VideoPause : VideoPlay"
+              >
+                {{ isRealtimeEnabled ? '停止监控' : '开始监控' }}
+              </el-button>
+              
+              <!-- 路径规划按钮 -->
               <el-button 
                 type="primary" 
                 @click="openPathPlanningDialog" 
@@ -93,7 +102,7 @@
                 路径规划
               </el-button>
 
-              <!-- ✅ 清除路径按钮 -->
+              <!-- 清除路径按钮 -->
               <el-button 
                 v-if="highlightedPath.length > 0"
                 type="warning" 
@@ -117,6 +126,26 @@
               </el-button>
             </el-space>
           </div>
+
+          <!-- ✅ 实时监控状态条 -->
+          <el-alert 
+            v-if="isRealtimeEnabled"
+            type="success"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 15px;"
+          >
+            <template #title>
+              <span>
+                🔴 实时监控中 | 
+                上次更新: {{ lastUpdateTimeDisplay }} | 
+                道路总数: {{ congestionSummary.totalRoads }} | 
+                畅通: {{ congestionSummary.smooth }} | 
+                正常: {{ congestionSummary.normal }} | 
+                拥堵: {{ congestionSummary.congested }}
+              </span>
+            </template>
+          </el-alert>
 
           <!-- 图例 -->
           <el-card shadow="never" class="legend-card">
@@ -216,6 +245,50 @@
             </el-descriptions>
           </el-card>
 
+          <!-- ✅ 道路拥堵状态列表 -->
+          <el-card v-if="roadCongestionList.length > 0" shadow="hover" class="congestion-list-card">
+            <template #header>
+              <div class="card-header-with-action">
+                <span><el-icon><Warning /></el-icon> 道路拥堵状态</span>
+                <el-button size="small" type="primary" text @click="fetchCongestionOverview">
+                  <el-icon><Refresh /></el-icon> 刷新
+                </el-button>
+              </div>
+            </template>
+            <el-table :data="roadCongestionList" style="width: 100%" max-height="300">
+              <el-table-column prop="roadName" label="道路名称" min-width="120" />
+              <el-table-column prop="trafficLevel" label="交通状态" width="100">
+                <template #default="{ row }">
+                  <el-tag :type="getTrafficLevelTagType(row.trafficLevel)" size="small">
+                    {{ getTrafficLevelName(row.trafficLevel) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="vehicleCount" label="车辆数" width="80" />
+              <el-table-column prop="congestionPercentage" label="拥堵率" width="100">
+                <template #default="{ row }">
+                  <el-progress 
+                    :percentage="row.congestionPercentage" 
+                    :color="getCongestionColor(row.congestionPercentage)"
+                    :stroke-width="10"
+                  />
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="80">
+                <template #default="{ row }">
+                  <el-button 
+                    type="primary" 
+                    size="small" 
+                    text 
+                    @click="showRoadDetail(row.roadId)"
+                  >
+                    详情
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-card>
+
           <!-- 地图块总数统计 -->
           <el-row :gutter="20">
             <el-col :span="24">
@@ -292,7 +365,7 @@
       </template>
     </el-dialog>
 
-    <!-- ✅ 路径规划弹窗 -->
+    <!-- 路径规划弹窗 -->
     <el-dialog 
       v-model="showPathDialog" 
       title="路径规划" 
@@ -352,20 +425,90 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- ✅ 道路详情弹窗 -->
+    <el-dialog 
+      v-model="showRoadDetailDialog" 
+      title="道路拥堵详情" 
+      width="600px"
+    >
+      <div v-loading="roadDetailLoading">
+        <el-descriptions :column="2" border v-if="selectedRoadDetail">
+          <el-descriptions-item label="道路名称" :span="2">
+            <el-tag type="primary" size="large">{{ selectedRoadDetail.roadName }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="道路描述" :span="2">
+            {{ selectedRoadDetail.description || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="交通状态">
+            <el-tag :type="getTrafficLevelTagType(selectedRoadDetail.trafficLevel)">
+              {{ getTrafficLevelName(selectedRoadDetail.trafficLevel) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="平均速度">
+            {{ selectedRoadDetail.averageSpeed }} km/h
+          </el-descriptions-item>
+          <el-descriptions-item label="车辆数量">
+            {{ selectedRoadDetail.vehicleCount }} 辆
+          </el-descriptions-item>
+          <el-descriptions-item label="节点数量">
+            {{ selectedRoadDetail.nodeCount }} 个
+          </el-descriptions-item>
+          <el-descriptions-item label="拥堵率" :span="2">
+            <el-progress 
+              :percentage="selectedRoadDetail.congestionPercentage" 
+              :color="getCongestionColor(selectedRoadDetail.congestionPercentage)"
+              :stroke-width="20"
+              :format="(p) => p + '%'"
+            />
+          </el-descriptions-item>
+          <el-descriptions-item label="有事件" :span="2">
+            <el-tag :type="selectedRoadDetail.hasEvents ? 'danger' : 'success'">
+              {{ selectedRoadDetail.hasEvents ? '是' : '否' }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="交通分布" :span="2">
+            <div class="traffic-distribution">
+              <el-tag type="success" style="margin-right: 10px;">
+                畅通: {{ selectedRoadDetail.trafficDistribution?.SMOOTH || 0 }}%
+              </el-tag>
+              <el-tag type="info" style="margin-right: 10px;">
+                正常: {{ selectedRoadDetail.trafficDistribution?.NORMAL || 0 }}%
+              </el-tag>
+              <el-tag type="danger" style="margin-right: 10px;">
+                拥堵: {{ selectedRoadDetail.trafficDistribution?.CONGESTED || 0 }}%
+              </el-tag>
+            </div>
+          </el-descriptions-item>
+          <el-descriptions-item label="最后更新" :span="2">
+            {{ formatTime(selectedRoadDetail.lastUpdated) }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
+      
+      <template #footer>
+        <el-button @click="showRoadDetailDialog = false">关闭</el-button>
+        <el-button type="primary" @click="highlightRoadOnMap">
+          在地图上高亮
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   User, MapLocation, Back, ArrowDown, SwitchButton,
-  View, Hide, Refresh, RefreshLeft, Grid, Guide, Close
+  View, Hide, Refresh, RefreshLeft, Grid, Guide, Close,
+  VideoPlay, VideoPause, Warning
 } from '@element-plus/icons-vue'
 import CanvasMapContainer from '../components/map/CanvasMapContainer.vue'
 import mapApi from '../api/map'
 import pathApi from '../api/path'
+import roadApi from '../api/road'
 import mapBg from '@/assets/bgi.png'
 
 const router = useRouter()
@@ -399,10 +542,10 @@ const loadingProgress = ref({
 const selectedBlock = ref(null)
 const showBlockDialog = ref(false)
 
-// ✅ 路径规划相关
+// 路径规划相关
 const showPathDialog = ref(false)
 const pathLoading = ref(false)
-const selectMode = ref(null)  // 'start' | 'end' | null
+const selectMode = ref(null)
 const startPoint = ref(null)
 const endPoint = ref(null)
 const highlightedPath = ref([])
@@ -411,6 +554,30 @@ const pathInfo = ref(null)
 const pathForm = ref({
   considerTraffic: true,
   avoidEvents: true
+})
+
+// ✅ 实时监控相关
+let congestionUpdateTimer = null
+const isRealtimeEnabled = ref(false)
+const lastUpdateTime = ref(null)
+const roadCongestionList = ref([])
+const congestionSummary = ref({
+  totalRoads: 0,
+  smooth: 0,
+  normal: 0,
+  congested: 0,
+  unknown: 0
+})
+
+// ✅ 道路详情相关
+const showRoadDetailDialog = ref(false)
+const roadDetailLoading = ref(false)
+const selectedRoadDetail = ref(null)
+
+// 计算上次更新时间显示
+const lastUpdateTimeDisplay = computed(() => {
+  if (!lastUpdateTime.value) return '无'
+  return new Date(lastUpdateTime.value).toLocaleTimeString('zh-CN')
 })
 
 // 切换标签
@@ -541,24 +708,256 @@ const getBlockName = (type, block) => {
 }
 
 /**
- * ✅ 打开路径规划对话框
+ * ✅ 获取道路拥堵概览
  */
-const openPathPlanningDialog = () => {
-  showPathDialog.value = true
-  // 保留之前选择的起点终点
+const fetchCongestionOverview = async () => {
+  try {
+    console.log('🔄 获取道路拥堵概览...')
+    const data = await roadApi.getCongestionOverview()
+    
+    if (data) {
+      // 更新拥堵列表
+      roadCongestionList.value = data.overview || []
+      
+      // 更新统计摘要
+      congestionSummary.value = {
+        totalRoads: data.totalRoads || 0,
+        smooth: data.summary?.smooth || 0,
+        normal: data.summary?.normal || 0,
+        congested: data.summary?.congested || 0,
+        unknown: data.summary?.unknown || 0
+      }
+      
+      // 更新最后更新时间
+      lastUpdateTime.value = new Date().toISOString()
+      
+      console.log(`✅ 拥堵概览更新完成，共 ${roadCongestionList.value.length} 条道路`)
+      
+      // 根据拥堵数据更新地图块颜色
+      updateMapBlocksFromCongestion(data.overview)
+    }
+  } catch (error) {
+    console.error('❌ 获取拥堵概览失败:', error)
+  }
 }
 
 /**
- * ✅ 开始选择点
+ * ✅ 根据拥堵数据更新地图块
+ */
+const updateMapBlocksFromCongestion = async (congestionData) => {
+  if (!congestionData || congestionData.length === 0) return
+  
+  // 遍历每条道路，获取详细节点信息并更新地图
+  for (const road of congestionData) {
+    try {
+      const roadDetail = await roadApi.getRoadCongestion(road.roadId)
+      
+      if (roadDetail && roadDetail.nodes) {
+        updateBlocksWithNodes(roadDetail.nodes)
+      }
+    } catch (error) {
+      console.error(`获取道路 ${road.roadId} 详情失败:`, error)
+    }
+  }
+}
+
+/**
+ * ✅ 使用节点数据更新地图块
+ */
+const updateBlocksWithNodes = (nodes) => {
+  if (!nodes || nodes.length === 0) return
+  
+  const blockMap = new Map()
+  
+  // 现有块转为 Map
+  mapBlocks.value.forEach(block => {
+    blockMap.set(`${block.x},${block.y}`, block)
+  })
+  
+  // 更新节点对应的块
+  nodes.forEach(node => {
+    const key = `${node.x},${node.y}`
+    const existingBlock = blockMap.get(key)
+    
+    if (existingBlock) {
+      // 更新交通状态
+      let newType = existingBlock.type
+      
+      if (node.event && node.event !== 'NONE') {
+        const eventMap = {
+          'ACCIDENT': 'accident',
+          'CONSTRUCTION': 'construction',
+          'ROAD_CLOSURE': 'road_closure'
+        }
+        newType = eventMap[node.event] || existingBlock.type
+      } else if (node.traffic) {
+        const trafficMap = {
+          'SMOOTH': 'smooth',
+          'NORMAL': 'normal',
+          'CONGESTED': 'congested'
+        }
+        newType = trafficMap[node.traffic] || existingBlock.type
+      }
+      
+      blockMap.set(key, {
+        ...existingBlock,
+        type: newType,
+        data: {
+          ...existingBlock.data,
+          traffic: node.traffic,
+          event: node.event,
+          updatedAt: node.updatedAt
+        }
+      })
+    }
+  })
+  
+  mapBlocks.value = Array.from(blockMap.values())
+}
+
+/**
+ * ✅ 切换实时监控
+ */
+const toggleRealtimeUpdate = () => {
+  if (isRealtimeEnabled.value) {
+    stopRealtimeUpdate()
+  } else {
+    startRealtimeUpdate()
+  }
+}
+
+/**
+ * ✅ 开始实时监控
+ */
+const startRealtimeUpdate = () => {
+  if (congestionUpdateTimer) {
+    ElMessage.warning('已在监控中')
+    return
+  }
+  
+  isRealtimeEnabled.value = true
+  
+  // 立即执行一次
+  fetchCongestionOverview()
+  
+  // 每 5 秒轮询一次
+  congestionUpdateTimer = setInterval(() => {
+    fetchCongestionOverview()
+  }, 5000)
+  
+  ElMessage.success('开始实时监控道路状态（每5秒）')
+}
+
+/**
+ * ✅ 停止实时监控
+ */
+const stopRealtimeUpdate = () => {
+  if (congestionUpdateTimer) {
+    clearInterval(congestionUpdateTimer)
+    congestionUpdateTimer = null
+    isRealtimeEnabled.value = false
+    ElMessage.info('已停止实时监控')
+  }
+}
+
+/**
+ * ✅ 显示道路详情
+ */
+const showRoadDetail = async (roadId) => {
+  showRoadDetailDialog.value = true
+  roadDetailLoading.value = true
+  
+  try {
+    const data = await roadApi.getRoadCongestion(roadId)
+    selectedRoadDetail.value = data
+  } catch (error) {
+    console.error('获取道路详情失败:', error)
+    ElMessage.error('获取道路详情失败')
+  } finally {
+    roadDetailLoading.value = false
+  }
+}
+
+/**
+ * ✅ 在地图上高亮道路
+ */
+const highlightRoadOnMap = () => {
+  if (!selectedRoadDetail.value || !selectedRoadDetail.value.nodes) {
+    ElMessage.warning('没有可高亮的节点')
+    return
+  }
+  
+  // 将道路节点作为高亮路径
+  highlightedPath.value = selectedRoadDetail.value.nodes.map(node => ({
+    x: node.x,
+    y: node.y
+  }))
+  
+  showRoadDetailDialog.value = false
+  ElMessage.success(`已高亮 ${highlightedPath.value.length} 个节点`)
+}
+
+/**
+ * ✅ 获取交通等级标签类型
+ */
+const getTrafficLevelTagType = (level) => {
+  const typeMap = {
+    'SMOOTH': 'success',
+    'NORMAL': 'info',
+    'CONGESTED': 'danger',
+    'UNKNOWN': 'warning'
+  }
+  return typeMap[level] || 'info'
+}
+
+/**
+ * ✅ 获取交通等级名称
+ */
+const getTrafficLevelName = (level) => {
+  const nameMap = {
+    'SMOOTH': '畅通',
+    'NORMAL': '正常',
+    'CONGESTED': '拥堵',
+    'UNKNOWN': '未知'
+  }
+  return nameMap[level] || level
+}
+
+/**
+ * ✅ 获取拥堵率颜色
+ */
+const getCongestionColor = (percentage) => {
+  if (percentage < 30) return '#67C23A'
+  if (percentage < 60) return '#E6A23C'
+  return '#F56C6C'
+}
+
+/**
+ * ✅ 格式化时间
+ */
+const formatTime = (timeStr) => {
+  if (!timeStr) return '-'
+  return new Date(timeStr).toLocaleString('zh-CN')
+}
+
+/**
+ * 打开路径规划对话框
+ */
+const openPathPlanningDialog = () => {
+  showPathDialog.value = true
+}
+
+/**
+ * 开始选择点
  */
 const startSelectPoint = (type) => {
   selectMode.value = type
-  showPathDialog.value = false  // 暂时关闭对话框以便点击地图
+  showPathDialog.value = false
   ElMessage.info(`请在地图上点击选择${type === 'start' ? '起点' : '终点'}`)
 }
 
 /**
- * ✅ 处理地图点选择
+ * 处理地图点选择
  */
 const handlePointSelect = (pointInfo) => {
   const { x, y, type } = pointInfo
@@ -572,11 +971,11 @@ const handlePointSelect = (pointInfo) => {
   }
   
   selectMode.value = null
-  showPathDialog.value = true  // 重新打开对话框
+  showPathDialog.value = true
 }
 
 /**
- * ✅ 取消路径规划
+ * 取消路径规划
  */
 const cancelPathPlanning = () => {
   showPathDialog.value = false
@@ -584,7 +983,7 @@ const cancelPathPlanning = () => {
 }
 
 /**
- * ✅ 提交路径规划
+ * 提交路径规划
  */
 const submitPathPlanning = async () => {
   if (!startPoint.value || !endPoint.value) {
@@ -605,15 +1004,9 @@ const submitPathPlanning = async () => {
       preferredSpeed: 50
     }
     
-    console.log('📍 发送路径规划请求:', requestData)
-    
     const result = await pathApi.calculateRoute(requestData)
     
-    console.log('✅ 路径规划结果:', result)
-    
-    // 处理返回的路径数据
     if (result && result.path && result.path.length > 0) {
-      // 将路径转换为坐标点数组
       highlightedPath.value = result.path.map(point => ({
         x: Math.round(point.x),
         y: Math.round(point.y)
@@ -640,7 +1033,7 @@ const submitPathPlanning = async () => {
 }
 
 /**
- * ✅ 清除路径
+ * 清除路径
  */
 const clearPath = () => {
   highlightedPath.value = []
@@ -663,6 +1056,8 @@ const initMap = () => {
 const resetMap = () => {
   initMap()
   clearPath()
+  stopRealtimeUpdate()
+  roadCongestionList.value = []
   ElMessage.success('地图已清空')
 }
 
@@ -761,6 +1156,15 @@ const getEventName = (event) => {
 onMounted(() => {
   ElMessage.success('欢迎使用用户中心')
   loadMapData()
+  // ✅ 自动开始实时监控
+  startRealtimeUpdate()
+})
+
+/**
+ * 页面卸载时清理
+ */
+onUnmounted(() => {
+  stopRealtimeUpdate()
 })
 </script>
 
@@ -930,10 +1334,28 @@ onMounted(() => {
   padding: 10px;
 }
 
-/* ✅ 路径信息卡片 */
+/* 路径信息卡片 */
 .path-info-card {
   margin-bottom: 20px;
   border-left: 4px solid #27ae60;
+}
+
+/* ✅ 拥堵列表卡片 */
+.congestion-list-card {
+  margin-bottom: 20px;
+  border-left: 4px solid #e67e22;
+}
+
+.card-header-with-action {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.traffic-distribution {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
 .total-blocks-card {
