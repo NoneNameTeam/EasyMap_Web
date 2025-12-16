@@ -84,7 +84,7 @@
                 {{ showDebug ? '隐藏' : '显示' }}坐标
               </el-button>
               
-              <!-- ✅ 实时监控按钮 -->
+              <!-- 实时监控按钮 -->
               <el-button 
                 :type="isRealtimeEnabled ? 'danger' : 'success'" 
                 @click="toggleRealtimeUpdate"
@@ -127,7 +127,7 @@
             </el-space>
           </div>
 
-          <!-- ✅ 实时监控状态条 -->
+          <!-- 实时监控状态条 -->
           <el-alert 
             v-if="isRealtimeEnabled"
             type="success"
@@ -137,12 +137,14 @@
           >
             <template #title>
               <span>
-                🔴 实时监控中 | 
+                 实时监控中 | 
                 上次更新: {{ lastUpdateTimeDisplay }} | 
                 道路总数: {{ congestionSummary.totalRoads }} | 
                 畅通: {{ congestionSummary.smooth }} | 
                 正常: {{ congestionSummary.normal }} | 
-                拥堵: {{ congestionSummary.congested }}
+                拥堵: {{ congestionSummary.congested }} |
+                 <!-- 交通灯: {{ trafficLights.length }} |
+                 闸机: {{ parkingGates.length }} -->
               </span>
             </template>
           </el-alert>
@@ -185,8 +187,78 @@
                 <span class="legend-dot" style="background: #3498db;"></span>
                 水域
               </el-tag>
+              <!-- ✅ 新增：交通灯和闸机图例 -->
+              <!-- <el-divider direction="vertical" /> -->
+              <!-- <el-tag effect="dark" style="background: #2c2c2c;">
+                🚦 交通灯
+              </el-tag>
+              <el-tag effect="dark" style="background: #555;">
+                🚧 停车闸机
+              </el-tag> -->
             </div>
           </el-card>
+
+          <!-- ✅ 交通灯状态卡片 -->
+          <!-- <el-card v-if="trafficLights.length > 0" shadow="hover" class="traffic-light-card">
+            <template #header>
+              <span>🚦 交通灯状态（实时）</span>
+            </template>
+            <div class="traffic-light-list">
+              <div 
+                v-for="light in trafficLights" 
+                :key="light.id" 
+                class="traffic-light-item"
+              >
+                <div class="light-info">
+                  <span class="light-name">{{ light.name }}</span>
+                  <span class="light-position">({{ light.x }}, {{ light.y }})</span>
+                </div>
+                <div class="light-status">
+                  <span 
+                    class="light-indicator"
+                    :style="{ background: getTrafficLightColor(light.state) }"
+                  ></span>
+                  <span class="light-state">{{ getTrafficLightStateName(light.state) }}</span>
+                  <el-tag 
+                    :type="light.state === 'RED' ? 'danger' : light.state === 'GREEN' ? 'success' : 'warning'"
+                    size="small"
+                  >
+                    {{ light.remainingTime || 0 }}s
+                  </el-tag>
+                  <el-tag type="info" size="small" style="margin-left: 5px;">
+                    {{ light.mode === 'AUTO' ? '自动' : '手动' }}
+                  </el-tag>
+                </div>
+              </div>
+            </div>
+          </el-card>
+
+          ✅ 停车场闸机状态卡片 -->
+          <!-- <el-card v-if="parkingGates.length > 0" shadow="hover" class="parking-gate-card">
+            <template #header>
+              <span>🚧 停车场闸机状态</span>
+            </template>
+            <div class="parking-gate-list">
+              <div 
+                v-for="gate in parkingGates" 
+                :key="gate.id" 
+                class="parking-gate-item"
+              >
+                <div class="gate-info">
+                  <span class="gate-name">{{ gate.name }}</span>
+                  <span class="gate-position">({{ gate.x }}, {{ gate.y }})</span>
+                </div>
+                <div class="gate-status">
+                  <el-tag 
+                    :type="getParkingGateTagType(gate.state)"
+                    effect="dark"
+                  >
+                    {{ getParkingGateStateName(gate.state) }}
+                  </el-tag>
+                </div>
+              </div>
+            </div>
+          </el-card> -->
 
           <!-- 地图容器 -->
           <el-card shadow="hover" class="map-card">
@@ -203,9 +275,13 @@
                 :select-mode="selectMode"
                 :start-point="startPoint"
                 :end-point="endPoint"
+                :traffic-lights="trafficLights"
+                :parking-gates="parkingGates"
                 @block-click="handleBlockClick"
                 @block-hover="handleBlockHover"
                 @point-select="handlePointSelect"
+                @traffic-light-click="handleTrafficLightClick"
+                @parking-gate-click="handleParkingGateClick"
               />
             </div>
           </el-card>
@@ -245,7 +321,7 @@
             </el-descriptions>
           </el-card>
 
-          <!-- ✅ 道路拥堵状态列表 -->
+          <!-- 道路拥堵状态列表 -->
           <el-card v-if="roadCongestionList.length > 0" shadow="hover" class="congestion-list-card">
             <template #header>
               <div class="card-header-with-action">
@@ -426,7 +502,7 @@
       </template>
     </el-dialog>
 
-    <!-- ✅ 道路详情弹窗 -->
+    <!-- 道路详情弹窗 -->
     <el-dialog 
       v-model="showRoadDetailDialog" 
       title="道路拥堵详情" 
@@ -493,6 +569,95 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- ✅ 交通灯信息弹窗（只读） -->
+    <!-- <el-dialog 
+      v-model="showTrafficLightDialog" 
+      title="🚦 交通灯信息"
+      width="400px"
+    >
+      <el-descriptions :column="1" border v-if="selectedTrafficLight">
+        <el-descriptions-item label="名称">
+          {{ selectedTrafficLight.name }}
+        </el-descriptions-item>
+        <el-descriptions-item label="ID">
+          {{ selectedTrafficLight.id }}
+        </el-descriptions-item>
+        <el-descriptions-item label="位置">
+          ({{ selectedTrafficLight.x }}, {{ selectedTrafficLight.y }})
+        </el-descriptions-item>
+        <el-descriptions-item label="当前状态">
+          <el-tag 
+            :type="selectedTrafficLight.state === 'RED' ? 'danger' : selectedTrafficLight.state === 'GREEN' ? 'success' : 'warning'"
+            effect="dark"
+            size="large"
+          >
+            {{ getTrafficLightStateName(selectedTrafficLight.state) }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="剩余时间">
+          <span style="font-size: 24px; font-weight: bold; color: #409EFF;">
+            {{ selectedTrafficLight.remainingTime || 0 }}
+          </span> 秒
+        </el-descriptions-item>
+        <el-descriptions-item label="持续时间">
+          {{ selectedTrafficLight.duration }} 秒
+        </el-descriptions-item>
+        <el-descriptions-item label="模式">
+          <el-tag :type="selectedTrafficLight.mode === 'AUTO' ? 'success' : 'warning'">
+            {{ selectedTrafficLight.mode === 'AUTO' ? '自动模式' : '手动模式' }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="所属道路">
+          {{ selectedTrafficLight.roadId || '-' }}
+        </el-descriptions-item>
+      </el-descriptions>
+      
+      <template #footer>
+        <el-button type="primary" @click="showTrafficLightDialog = false">关闭</el-button>
+      </template>
+    </el-dialog> -->
+
+    <!-- ✅ 停车场闸机信息弹窗（只读） -->
+    <!-- <el-dialog 
+      v-model="showParkingGateDialog" 
+      title="🚧 停车场闸机信息"
+      width="400px"
+    >
+      <el-descriptions :column="1" border v-if="selectedParkingGate">
+        <el-descriptions-item label="名称">
+          {{ selectedParkingGate.name }}
+        </el-descriptions-item>
+        <el-descriptions-item label="ID">
+          {{ selectedParkingGate.id }}
+        </el-descriptions-item>
+        <el-descriptions-item label="位置">
+          ({{ selectedParkingGate.x }}, {{ selectedParkingGate.y }})
+        </el-descriptions-item>
+        <el-descriptions-item label="当前状态">
+          <el-tag 
+            :type="getParkingGateTagType(selectedParkingGate.state)"
+            effect="dark"
+            size="large"
+          >
+            {{ getParkingGateStateName(selectedParkingGate.state) }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="所属停车场">
+          {{ selectedParkingGate.parkingLotId || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="上次开启" v-if="selectedParkingGate.lastOpened">
+          {{ formatTime(selectedParkingGate.lastOpened) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="上次关闭" v-if="selectedParkingGate.lastClosed">
+          {{ formatTime(selectedParkingGate.lastClosed) }}
+        </el-descriptions-item>
+      </el-descriptions>
+      
+      <template #footer>
+        <el-button type="primary" @click="showParkingGateDialog = false">关闭</el-button>
+      </template>
+    </el-dialog> -->
   </div>
 </template>
 
@@ -509,6 +674,8 @@ import CanvasMapContainer from '../components/map/CanvasMapContainer.vue'
 import mapApi from '../api/map'
 import pathApi from '../api/path'
 import roadApi from '../api/road'
+import trafficApi from '../api/traffic'  // ✅ 新增
+import parkingApi from '../api/parking'  // ✅ 新增
 import mapBg from '@/assets/bgi.png'
 
 const router = useRouter()
@@ -517,9 +684,9 @@ const router = useRouter()
 const currentTab = ref('map')
 
 // 地图配置
-const mapWidth = ref(160)
-const mapHeight = ref(160)
-const blockSize = ref(4)
+const mapWidth = ref(120)
+const mapHeight = ref(120)
+const blockSize = ref(5)
 const showDebug = ref(false)
 
 const backgroundImage = ref(mapBg)
@@ -556,7 +723,7 @@ const pathForm = ref({
   avoidEvents: true
 })
 
-// ✅ 实时监控相关
+// 实时监控相关
 let congestionUpdateTimer = null
 const isRealtimeEnabled = ref(false)
 const lastUpdateTime = ref(null)
@@ -569,10 +736,22 @@ const congestionSummary = ref({
   unknown: 0
 })
 
-// ✅ 道路详情相关
+// 道路详情相关
 const showRoadDetailDialog = ref(false)
 const roadDetailLoading = ref(false)
 const selectedRoadDetail = ref(null)
+
+// ✅ 交通灯相关
+const trafficLights = ref([])
+const showTrafficLightDialog = ref(false)
+const selectedTrafficLight = ref(null)
+let trafficLightTimer = null
+
+// ✅ 停车场闸机相关
+const parkingGates = ref([])
+const showParkingGateDialog = ref(false)
+const selectedParkingGate = ref(null)
+let parkingGateTimer = null
 
 // 计算上次更新时间显示
 const lastUpdateTimeDisplay = computed(() => {
@@ -707,8 +886,158 @@ const getBlockName = (type, block) => {
   return '区域'
 }
 
+// ============ ✅ 交通灯相关方法 ============
+
 /**
- * ✅ 获取道路拥堵概览
+ * 获取所有交通灯
+ */
+const fetchTrafficLights = async () => {
+  try {
+    console.log('🚦 获取交通灯数据...')
+    const data = await trafficApi.getAll()
+    trafficLights.value = data || []
+    console.log(`✅ 获取到 ${trafficLights.value.length} 个交通灯`)
+  } catch (error) {
+    console.error('❌ 获取交通灯失败:', error)
+  }
+}
+
+/**
+ * 开始交通灯轮询
+ */
+const startTrafficLightPolling = () => {
+  if (trafficLightTimer) return
+  
+  fetchTrafficLights()
+  trafficLightTimer = setInterval(() => {
+    fetchTrafficLights()
+  }, 500)  // 每2秒刷新（更快地更新剩余时间）
+  
+  console.log('🚦 开始交通灯状态轮询（每2秒）')
+}
+
+/**
+ * 停止交通灯轮询
+ */
+const stopTrafficLightPolling = () => {
+  if (trafficLightTimer) {
+    clearInterval(trafficLightTimer)
+    trafficLightTimer = null
+    console.log('🚦 停止交通灯状态轮询')
+  }
+}
+
+/**
+ * 处理交通灯点击（只读查看）
+ */
+const handleTrafficLightClick = (light) => {
+  selectedTrafficLight.value = light
+  showTrafficLightDialog.value = true
+}
+
+/**
+ * 获取交通灯颜色
+ */
+const getTrafficLightColor = (state) => {
+  const colors = {
+    RED: '#e74c3c',
+    YELLOW: '#f1c40f',
+    GREEN: '#27ae60'
+  }
+  return colors[state] || '#95a5a6'
+}
+
+/**
+ * 获取交通灯状态名称
+ */
+const getTrafficLightStateName = (state) => {
+  const names = {
+    RED: '红灯',
+    YELLOW: '黄灯',
+    GREEN: '绿灯'
+  }
+  return names[state] || state
+}
+
+// ============ ✅ 停车场闸机相关方法 ============
+
+/**
+ * 获取所有停车场闸机
+ */
+const fetchParkingGates = async () => {
+  try {
+    console.log('🚧 获取停车场闸机数据...')
+    const data = await parkingApi.getAll()
+    parkingGates.value = data || []
+    console.log(`✅ 获取到 ${parkingGates.value.length} 个停车场闸机`)
+  } catch (error) {
+    console.error('❌ 获取停车场闸机失败:', error)
+  }
+}
+
+/**
+ * 开始停车场闸机轮询
+ */
+const startParkingGatePolling = () => {
+  if (parkingGateTimer) return
+  
+  fetchParkingGates()
+  parkingGateTimer = setInterval(() => {
+    fetchParkingGates()
+  }, 3000)  // 每3秒刷新
+  
+  console.log('🚧 开始停车场闸机状态轮询（每3秒）')
+}
+
+/**
+ * 停止停车场闸机轮询
+ */
+const stopParkingGatePolling = () => {
+  if (parkingGateTimer) {
+    clearInterval(parkingGateTimer)
+    parkingGateTimer = null
+    console.log('🚧 停止停车场闸机状态轮询')
+  }
+}
+
+/**
+ * 处理停车场闸机点击（只读查看）
+ */
+const handleParkingGateClick = (gate) => {
+  selectedParkingGate.value = gate
+  showParkingGateDialog.value = true
+}
+
+/**
+ * 获取停车场闸机状态名称
+ */
+const getParkingGateStateName = (state) => {
+  const names = {
+    OPEN: '已开启',
+    CLOSED: '已关闭',
+    OPENING: '正在开启',
+    CLOSING: '正在关闭'
+  }
+  return names[state] || state
+}
+
+/**
+ * 获取停车场闸机标签类型
+ */
+const getParkingGateTagType = (state) => {
+  const types = {
+    OPEN: 'success',
+    CLOSED: 'danger',
+    OPENING: 'warning',
+    CLOSING: 'warning'
+  }
+  return types[state] || 'info'
+}
+
+// ============ 道路拥堵相关方法 ============
+
+/**
+ * 获取道路拥堵概览
  */
 const fetchCongestionOverview = async () => {
   try {
@@ -716,10 +1045,8 @@ const fetchCongestionOverview = async () => {
     const data = await roadApi.getCongestionOverview()
     
     if (data) {
-      // 更新拥堵列表
       roadCongestionList.value = data.overview || []
       
-      // 更新统计摘要
       congestionSummary.value = {
         totalRoads: data.totalRoads || 0,
         smooth: data.summary?.smooth || 0,
@@ -728,12 +1055,10 @@ const fetchCongestionOverview = async () => {
         unknown: data.summary?.unknown || 0
       }
       
-      // 更新最后更新时间
       lastUpdateTime.value = new Date().toISOString()
       
       console.log(`✅ 拥堵概览更新完成，共 ${roadCongestionList.value.length} 条道路`)
       
-      // 根据拥堵数据更新地图块颜色
       updateMapBlocksFromCongestion(data.overview)
     }
   } catch (error) {
@@ -742,12 +1067,11 @@ const fetchCongestionOverview = async () => {
 }
 
 /**
- * ✅ 根据拥堵数据更新地图块
+ * 根据拥堵数据更新地图块
  */
 const updateMapBlocksFromCongestion = async (congestionData) => {
   if (!congestionData || congestionData.length === 0) return
   
-  // 遍历每条道路，获取详细节点信息并更新地图
   for (const road of congestionData) {
     try {
       const roadDetail = await roadApi.getRoadCongestion(road.roadId)
@@ -762,25 +1086,22 @@ const updateMapBlocksFromCongestion = async (congestionData) => {
 }
 
 /**
- * ✅ 使用节点数据更新地图块
+ * 使用节点数据更新地图块
  */
 const updateBlocksWithNodes = (nodes) => {
   if (!nodes || nodes.length === 0) return
   
   const blockMap = new Map()
   
-  // 现有块转为 Map
   mapBlocks.value.forEach(block => {
     blockMap.set(`${block.x},${block.y}`, block)
   })
   
-  // 更新节点对应的块
   nodes.forEach(node => {
     const key = `${node.x},${node.y}`
     const existingBlock = blockMap.get(key)
     
     if (existingBlock) {
-      // 更新交通状态
       let newType = existingBlock.type
       
       if (node.event && node.event !== 'NONE') {
@@ -816,7 +1137,7 @@ const updateBlocksWithNodes = (nodes) => {
 }
 
 /**
- * ✅ 切换实时监控
+ * 切换实时监控
  */
 const toggleRealtimeUpdate = () => {
   if (isRealtimeEnabled.value) {
@@ -827,7 +1148,7 @@ const toggleRealtimeUpdate = () => {
 }
 
 /**
- * ✅ 开始实时监控
+ * 开始实时监控
  */
 const startRealtimeUpdate = () => {
   if (congestionUpdateTimer) {
@@ -840,28 +1161,37 @@ const startRealtimeUpdate = () => {
   // 立即执行一次
   fetchCongestionOverview()
   
-  // 每 5 秒轮询一次
+  // 每 5 秒轮询道路拥堵
   congestionUpdateTimer = setInterval(() => {
     fetchCongestionOverview()
   }, 5000)
   
-  ElMessage.success('开始实时监控道路状态（每5秒）')
+  // ✅ 同时开始交通灯和闸机轮询
+  startTrafficLightPolling()
+  startParkingGatePolling()
+  
+  ElMessage.success('开始实时监控')
 }
 
 /**
- * ✅ 停止实时监控
+ * 停止实时监控
  */
 const stopRealtimeUpdate = () => {
   if (congestionUpdateTimer) {
     clearInterval(congestionUpdateTimer)
     congestionUpdateTimer = null
-    isRealtimeEnabled.value = false
-    ElMessage.info('已停止实时监控')
   }
+  
+  // ✅ 同时停止交通灯和闸机轮询
+  stopTrafficLightPolling()
+  stopParkingGatePolling()
+  
+  isRealtimeEnabled.value = false
+  ElMessage.info('已停止实时监控')
 }
 
 /**
- * ✅ 显示道路详情
+ * 显示道路详情
  */
 const showRoadDetail = async (roadId) => {
   showRoadDetailDialog.value = true
@@ -879,7 +1209,7 @@ const showRoadDetail = async (roadId) => {
 }
 
 /**
- * ✅ 在地图上高亮道路
+ * 在地图上高亮道路
  */
 const highlightRoadOnMap = () => {
   if (!selectedRoadDetail.value || !selectedRoadDetail.value.nodes) {
@@ -887,7 +1217,6 @@ const highlightRoadOnMap = () => {
     return
   }
   
-  // 将道路节点作为高亮路径
   highlightedPath.value = selectedRoadDetail.value.nodes.map(node => ({
     x: node.x,
     y: node.y
@@ -898,7 +1227,7 @@ const highlightRoadOnMap = () => {
 }
 
 /**
- * ✅ 获取交通等级标签类型
+ * 获取交通等级标签类型
  */
 const getTrafficLevelTagType = (level) => {
   const typeMap = {
@@ -911,7 +1240,7 @@ const getTrafficLevelTagType = (level) => {
 }
 
 /**
- * ✅ 获取交通等级名称
+ * 获取交通等级名称
  */
 const getTrafficLevelName = (level) => {
   const nameMap = {
@@ -924,7 +1253,7 @@ const getTrafficLevelName = (level) => {
 }
 
 /**
- * ✅ 获取拥堵率颜色
+ * 获取拥堵率颜色
  */
 const getCongestionColor = (percentage) => {
   if (percentage < 30) return '#67C23A'
@@ -933,12 +1262,14 @@ const getCongestionColor = (percentage) => {
 }
 
 /**
- * ✅ 格式化时间
+ * 格式化时间
  */
 const formatTime = (timeStr) => {
   if (!timeStr) return '-'
   return new Date(timeStr).toLocaleString('zh-CN')
 }
+
+// ============ 路径规划相关方法 ============
 
 /**
  * 打开路径规划对话框
@@ -1043,6 +1374,8 @@ const clearPath = () => {
   ElMessage.success('已清除路径')
 }
 
+// ============ 地图基础方法 ============
+
 /**
  * 初始化地图
  */
@@ -1058,6 +1391,8 @@ const resetMap = () => {
   clearPath()
   stopRealtimeUpdate()
   roadCongestionList.value = []
+  trafficLights.value = []      // ✅ 清空交通灯
+  parkingGates.value = []       // ✅ 清空闸机
   ElMessage.success('地图已清空')
 }
 
@@ -1150,13 +1485,15 @@ const getEventName = (event) => {
   return nameMap[event] || event
 }
 
+// ============ 生命周期 ============
+
 /**
  * 页面加载时初始化
  */
 onMounted(() => {
   ElMessage.success('欢迎使用用户中心')
   loadMapData()
-  // ✅ 自动开始实时监控
+  // ✅ 自动开始实时监控（包含交通灯和闸机）
   startRealtimeUpdate()
 })
 
@@ -1312,6 +1649,7 @@ onUnmounted(() => {
   display: flex;
   gap: 15px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .legend-dot {
@@ -1340,7 +1678,7 @@ onUnmounted(() => {
   border-left: 4px solid #27ae60;
 }
 
-/* ✅ 拥堵列表卡片 */
+/* 拥堵列表卡片 */
 .congestion-list-card {
   margin-bottom: 20px;
   border-left: 4px solid #e67e22;
@@ -1362,6 +1700,135 @@ onUnmounted(() => {
   border-left: 4px solid #16a085;
 }
 
+/* ✅ 交通灯状态卡片 */
+.traffic-light-card {
+  margin-bottom: 20px;
+  border-left: 4px solid #f1c40f;
+}
+
+.traffic-light-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.traffic-light-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  min-width: 280px;
+  flex: 1;
+  max-width: 400px;
+  transition: all 0.3s;
+}
+
+.traffic-light-item:hover {
+  background: #e9ecef;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.light-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.light-name {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 14px;
+}
+
+.light-position {
+  font-size: 12px;
+  color: #7f8c8d;
+}
+
+.light-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.light-indicator {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentColor;
+  animation: glow 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes glow {
+  from {
+    box-shadow: 0 0 5px currentColor;
+  }
+  to {
+    box-shadow: 0 0 15px currentColor, 0 0 20px currentColor;
+  }
+}
+
+.light-state {
+  font-weight: 500;
+  font-size: 13px;
+}
+
+/* ✅ 停车场闸机状态卡片 */
+.parking-gate-card {
+  margin-bottom: 20px;
+  border-left: 4px solid #e67e22;
+}
+
+.parking-gate-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.parking-gate-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  min-width: 250px;
+  flex: 1;
+  max-width: 350px;
+  transition: all 0.3s;
+}
+
+.parking-gate-item:hover {
+  background: #e9ecef;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.gate-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gate-name {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 14px;
+}
+
+.gate-position {
+  font-size: 12px;
+  color: #7f8c8d;
+}
+
+.gate-status {
+  display: flex;
+  align-items: center;
+}
+
 /* 响应式 */
 @media (max-width: 768px) {
   .section-header {
@@ -1371,6 +1838,17 @@ onUnmounted(() => {
 
   .top-bar h1 {
     font-size: 1.2rem;
+  }
+
+  .traffic-light-item,
+  .parking-gate-item {
+    min-width: 100%;
+    max-width: 100%;
+  }
+
+  .traffic-light-list,
+  .parking-gate-list {
+    flex-direction: column;
   }
 }
 </style>

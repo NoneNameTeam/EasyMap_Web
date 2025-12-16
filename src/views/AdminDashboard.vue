@@ -1445,7 +1445,7 @@ const startTrafficLightPolling = () => {
   fetchTrafficLights()
   trafficLightTimer = setInterval(() => {
     fetchTrafficLights()
-  }, 3000)  // 每3秒刷新
+  }, 500)  // 每3秒刷新
   
   console.log('🚦 开始交通灯状态轮询（每3秒）')
 }
