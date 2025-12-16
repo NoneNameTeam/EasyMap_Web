@@ -19,6 +19,14 @@
       :height="canvasHeight"
     ></canvas>
 
+    <!-- ✅ Canvas 图层：交通灯和闸机（独立层） -->
+    <canvas 
+      ref="overlayCanvasRef" 
+      class="overlay-canvas"
+      :width="canvasWidth"
+      :height="canvasHeight"
+    ></canvas>
+
     <!-- DOM 层：悬停提示 -->
     <div v-if="hoveredBlock && !selectMode" class="info-tooltip" :style="tooltipStyle">
       <h4>{{ getBlockTypeName(hoveredBlock.type) }}</h4>
@@ -26,10 +34,29 @@
       <p v-if="hoveredBlock.data?.name">{{ hoveredBlock.data.name }}</p>
     </div>
 
+    <!-- ✅ 交通灯悬停提示 -->
+    <div v-if="hoveredTrafficLight" class="info-tooltip traffic-light-tooltip" :style="tooltipStyle">
+      <h4>🚦 {{ hoveredTrafficLight.name }}</h4>
+      <p>状态: <span :style="{ color: getTrafficLightColor(hoveredTrafficLight.state) }">
+        {{ getTrafficLightStateName(hoveredTrafficLight.state) }}
+      </span></p>
+      <p>持续时间: {{ hoveredTrafficLight.duration }}秒</p>
+      <p>位置: ({{ hoveredTrafficLight.x }}, {{ hoveredTrafficLight.y }})</p>
+    </div>
+
+    <!-- ✅ 停车场闸机悬停提示 -->
+    <div v-if="hoveredParkingGate" class="info-tooltip parking-gate-tooltip" :style="tooltipStyle">
+      <h4>🚧 {{ hoveredParkingGate.name }}</h4>
+      <p>状态: <span :style="{ color: getParkingGateColor(hoveredParkingGate.state) }">
+        {{ getParkingGateStateName(hoveredParkingGate.state) }}
+      </span></p>
+      <p>位置: ({{ hoveredParkingGate.x }}, {{ hoveredParkingGate.y }})</p>
+    </div>
+
     <!-- 选择模式提示 -->
     <div v-if="selectMode" class="select-mode-tip">
       <el-tag :type="selectMode === 'start' ? 'success' : 'danger'" size="large">
-        {{ selectMode === 'start' ? '🚩 请点击地图选择起点' : '🏁 请点击地图选择终点' }}
+        {{ selectMode === 'start' ? ' 请点击地图选择起点' : ' 请点击地图选择终点' }}
       </el-tag>
     </div>
 
@@ -39,14 +66,18 @@
       class="point-marker start-marker"
       :style="{ left: startPoint.x * blockSize + blockSize/2 + 'px', top: startPoint.y * blockSize + blockSize/2 + 'px' }"
     >
-      🚩
+      <el-icon :size="24" color="#409EFF">
+        <Flag />
+      </el-icon>
     </div>
     <div 
       v-if="endPoint" 
       class="point-marker end-marker"
       :style="{ left: endPoint.x * blockSize + blockSize/2 + 'px', top: endPoint.y * blockSize + blockSize/2 + 'px' }"
     >
-      🏁
+      <el-icon :size="24" color="#F56C6C">
+        <Position />
+      </el-icon>
     </div>
 
     <!-- 调试信息 -->
@@ -54,6 +85,8 @@
       <p>渲染模式: Canvas</p>
       <p>地图块: {{ blocks.length }} 个</p>
       <p>车辆: {{ vehicles.length }} 辆</p>
+      <p>交通灯: {{ trafficLights.length }} 个</p>
+      <p>停车闸机: {{ parkingGates.length }} 个</p>
       <p>高亮路径: {{ highlightedPath.length }} 个点</p>
       <p>FPS: {{ fps }}</p>
       <p>鼠标: ({{ mousePos.x }}, {{ mousePos.y }})</p>
@@ -72,31 +105,42 @@ const props = defineProps({
   vehicles: { type: Array, default: () => [] },
   showDebug: { type: Boolean, default: false },
   backgroundImage: { type: String, default: '' },
-  // ✅ 新增：高亮路径
   highlightedPath: { type: Array, default: () => [] },
-  // ✅ 新增：选择模式 ('start' | 'end' | null)
   selectMode: { type: String, default: null },
-  // ✅ 新增：起点
   startPoint: { type: Object, default: null },
-  // ✅ 新增：终点
-  endPoint: { type: Object, default: null }
+  endPoint: { type: Object, default: null },
+  // ✅ 新增：交通灯数据
+  trafficLights: { type: Array, default: () => [] },
+  // ✅ 新增：停车场闸机数据
+  parkingGates: { type: Array, default: () => [] }
 })
 
-const emit = defineEmits(['block-click', 'block-hover', 'vehicle-click', 'point-select'])
+const emit = defineEmits([
+  'block-click', 
+  'block-hover', 
+  'vehicle-click', 
+  'point-select',
+  'traffic-light-click',  // ✅ 新增
+  'parking-gate-click'    // ✅ 新增
+])
 
 // Refs
 const containerRef = ref(null)
 const canvasRef = ref(null)
 const vehicleCanvasRef = ref(null)
+const overlayCanvasRef = ref(null)  // ✅ 新增
 
 // 状态
 const hoveredBlock = ref(null)
+const hoveredTrafficLight = ref(null)  // ✅ 新增
+const hoveredParkingGate = ref(null)   // ✅ 新增
 const mousePos = ref({ x: 0, y: 0 })
 const fps = ref(0)
 
 // Canvas 上下文
 let ctx = null
 let vehicleCtx = null
+let overlayCtx = null  // ✅ 新增
 
 // 背景图片对象
 let bgImage = null
@@ -122,7 +166,7 @@ const tooltipStyle = computed(() => ({
   top: `${mousePos.value.y + 10}px`
 }))
 
-// ✅ 创建高亮路径的坐标集合（用于快速查找）
+// 创建高亮路径的坐标集合
 const highlightedPathSet = computed(() => {
   const set = new Set()
   props.highlightedPath.forEach(point => {
@@ -156,9 +200,62 @@ const blockBorders = {
   road_closure: '#a93226'
 }
 
-// ✅ 高亮路径颜色（畅通绿色）
 const highlightColor = 'rgba(39, 174, 96, 0.7)'
 const highlightBorder = '#27ae60'
+
+// ✅ 交通灯颜色配置
+const trafficLightColors = {
+  RED: '#e74c3c',
+  YELLOW: '#f1c40f',
+  GREEN: '#27ae60'
+}
+
+// ✅ 停车场闸机颜色配置
+const parkingGateColors = {
+  OPEN: '#27ae60',
+  CLOSED: '#e74c3c',
+  OPENING: '#f1c40f',
+  CLOSING: '#f39c12'
+}
+
+/**
+ * ✅ 获取交通灯颜色
+ */
+function getTrafficLightColor(state) {
+  return trafficLightColors[state] || '#95a5a6'
+}
+
+/**
+ * ✅ 获取交通灯状态名称
+ */
+function getTrafficLightStateName(state) {
+  const names = {
+    RED: '红灯',
+    YELLOW: '黄灯',
+    GREEN: '绿灯'
+  }
+  return names[state] || state
+}
+
+/**
+ * ✅ 获取停车场闸机颜色
+ */
+function getParkingGateColor(state) {
+  return parkingGateColors[state] || '#95a5a6'
+}
+
+/**
+ * ✅ 获取停车场闸机状态名称
+ */
+function getParkingGateStateName(state) {
+  const names = {
+    OPEN: '已开启',
+    CLOSED: '已关闭',
+    OPENING: '正在开启',
+    CLOSING: '正在关闭'
+  }
+  return names[state] || state
+}
 
 /**
  * 加载背景图片
@@ -238,10 +335,8 @@ function drawBlock(block, isHovered = false) {
   const y = block.y * props.blockSize
   const size = props.blockSize
   
-  // ✅ 检查是否在高亮路径中
   const isHighlighted = highlightedPathSet.value.has(`${block.x},${block.y}`)
   
-  // 填充颜色
   if (isHighlighted) {
     ctx.fillStyle = highlightColor
   } else {
@@ -249,7 +344,6 @@ function drawBlock(block, isHovered = false) {
   }
   ctx.fillRect(x, y, size, size)
   
-  // 边框
   if (isHighlighted) {
     ctx.strokeStyle = highlightBorder
     ctx.lineWidth = 2
@@ -259,13 +353,11 @@ function drawBlock(block, isHovered = false) {
   }
   ctx.strokeRect(x, y, size, size)
   
-  // 悬停高亮
   if (isHovered && !isHighlighted) {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)'
     ctx.fillRect(x, y, size, size)
   }
   
-  // 调试模式：显示坐标
   if (props.showDebug) {
     ctx.fillStyle = '#fff'
     ctx.font = '10px Arial'
@@ -279,7 +371,7 @@ function drawBlock(block, isHovered = false) {
 }
 
 /**
- * ✅ 绘制高亮路径连接线
+ * 绘制高亮路径连接线
  */
 function drawPathLines() {
   if (!ctx || props.highlightedPath.length < 2) return
@@ -327,11 +419,187 @@ function drawAllBlocks() {
     drawBlock(block, isHovered)
   })
   
-  // ✅ 绘制路径连接线
   drawPathLines()
   
   const endTime = performance.now()
   console.log(`🎨 重绘完成，耗时: ${(endTime - startTime).toFixed(2)}ms，块数: ${props.blocks.length}`)
+}
+
+/**
+ * ✅ 绘制单个交通灯
+ */
+function drawTrafficLight(light, isHovered = false) {
+  if (!overlayCtx) return
+  
+  const centerX = light.x * props.blockSize + props.blockSize / 2
+  const centerY = light.y * props.blockSize + props.blockSize / 2
+  
+  // 交通灯尺寸配置
+  const lightRadius = Math.max(4, props.blockSize / 6)
+  const spacing = lightRadius * 2.5
+  const boxWidth = lightRadius * 3
+  const boxHeight = spacing * 3 + lightRadius
+  
+  // 绘制交通灯背景框
+  overlayCtx.fillStyle = isHovered ? '#1a1a1a' : '#2c2c2c'
+  overlayCtx.strokeStyle = isHovered ? '#fff' : '#555'
+  overlayCtx.lineWidth = isHovered ? 3 : 2
+  
+  const boxX = centerX - boxWidth / 2
+  const boxY = centerY - boxHeight / 2
+  
+  // 圆角矩形
+  const radius = 4
+  overlayCtx.beginPath()
+  overlayCtx.moveTo(boxX + radius, boxY)
+  overlayCtx.lineTo(boxX + boxWidth - radius, boxY)
+  overlayCtx.quadraticCurveTo(boxX + boxWidth, boxY, boxX + boxWidth, boxY + radius)
+  overlayCtx.lineTo(boxX + boxWidth, boxY + boxHeight - radius)
+  overlayCtx.quadraticCurveTo(boxX + boxWidth, boxY + boxHeight, boxX + boxWidth - radius, boxY + boxHeight)
+  overlayCtx.lineTo(boxX + radius, boxY + boxHeight)
+  overlayCtx.quadraticCurveTo(boxX, boxY + boxHeight, boxX, boxY + boxHeight - radius)
+  overlayCtx.lineTo(boxX, boxY + radius)
+  overlayCtx.quadraticCurveTo(boxX, boxY, boxX + radius, boxY)
+  overlayCtx.closePath()
+  overlayCtx.fill()
+  overlayCtx.stroke()
+  
+  // 绘制三个灯（红、黄、绿）
+  const lights = [
+    { color: 'RED', y: centerY - spacing },
+    { color: 'YELLOW', y: centerY },
+    { color: 'GREEN', y: centerY + spacing }
+  ]
+  
+  lights.forEach(({ color, y }) => {
+    const isActive = light.state === color
+    
+    // 外圈
+    overlayCtx.beginPath()
+    overlayCtx.arc(centerX, y, lightRadius, 0, Math.PI * 2)
+    
+    if (isActive) {
+      // 激活状态：发光效果
+      overlayCtx.fillStyle = trafficLightColors[color]
+      overlayCtx.shadowColor = trafficLightColors[color]
+      overlayCtx.shadowBlur = 15
+    } else {
+      // 未激活状态：暗色
+      overlayCtx.fillStyle = `${trafficLightColors[color]}40`  // 25% 透明度
+      overlayCtx.shadowBlur = 0
+    }
+    
+    overlayCtx.fill()
+    overlayCtx.shadowBlur = 0
+    
+    // 边框
+    overlayCtx.strokeStyle = '#111'
+    overlayCtx.lineWidth = 1
+    overlayCtx.stroke()
+  })
+  
+  // 显示名称（调试模式或悬停）
+  if (props.showDebug || isHovered) {
+    overlayCtx.fillStyle = '#fff'
+    overlayCtx.font = 'bold 10px Arial'
+    overlayCtx.textAlign = 'center'
+    overlayCtx.shadowColor = '#000'
+    overlayCtx.shadowBlur = 3
+    overlayCtx.fillText(light.name || light.id, centerX, boxY - 8)
+    overlayCtx.shadowBlur = 0
+  }
+}
+
+/**
+ * ✅ 绘制单个停车场闸机
+ */
+function drawParkingGate(gate, isHovered = false) {
+  if (!overlayCtx) return
+  
+  const centerX = gate.x * props.blockSize + props.blockSize / 2
+  const centerY = gate.y * props.blockSize + props.blockSize / 2
+  
+  const gateWidth = Math.max(20, props.blockSize * 0.8)
+  const gateHeight = Math.max(8, props.blockSize * 0.3)
+  const poleWidth = 6
+  const poleHeight = gateHeight * 1.5
+  
+  // 根据状态确定颜色和角度
+  const stateColor = parkingGateColors[gate.state] || '#95a5a6'
+  let gateAngle = 0
+  
+  switch (gate.state) {
+    case 'OPEN':
+      gateAngle = -80
+      break
+    case 'CLOSED':
+      gateAngle = 0
+      break
+    case 'OPENING':
+      gateAngle = -40
+      break
+    case 'CLOSING':
+      gateAngle = -40
+      break
+  }
+  
+  // 绘制底座
+  overlayCtx.fillStyle = '#555'
+  overlayCtx.fillRect(centerX - poleWidth / 2, centerY - poleHeight / 2, poleWidth, poleHeight)
+  
+  // 绘制杆（带旋转）
+  overlayCtx.save()
+  overlayCtx.translate(centerX, centerY - poleHeight / 2 + 4)
+  overlayCtx.rotate((gateAngle * Math.PI) / 180)
+  
+  // 杆身
+  overlayCtx.fillStyle = stateColor
+  overlayCtx.fillRect(0, -gateHeight / 2, gateWidth, gateHeight)
+  
+  // 杆身边框
+  overlayCtx.strokeStyle = isHovered ? '#fff' : '#333'
+  overlayCtx.lineWidth = isHovered ? 2 : 1
+  overlayCtx.strokeRect(0, -gateHeight / 2, gateWidth, gateHeight)
+  
+  // 斜条纹
+  overlayCtx.fillStyle = gate.state === 'CLOSED' ? '#fff' : '#333'
+  for (let i = 0; i < gateWidth; i += 8) {
+    overlayCtx.fillRect(i, -gateHeight / 2, 3, gateHeight)
+  }
+  
+  overlayCtx.restore()
+  
+  // 显示名称
+  if (props.showDebug || isHovered) {
+    overlayCtx.fillStyle = '#fff'
+    overlayCtx.font = 'bold 10px Arial'
+    overlayCtx.textAlign = 'center'
+    overlayCtx.shadowColor = '#000'
+    overlayCtx.shadowBlur = 3
+    overlayCtx.fillText(gate.name || gate.id, centerX, centerY + poleHeight / 2 + 15)
+    overlayCtx.shadowBlur = 0
+  }
+}
+
+/**
+ * ✅ 绘制所有交通灯和闸机
+ */
+function drawOverlay() {
+  if (!overlayCtx) return
+  
+  overlayCtx.clearRect(0, 0, canvasWidth.value, canvasHeight.value)
+  
+  // 绘制交通灯
+  props.trafficLights.forEach(light => {
+    const isHovered = hoveredTrafficLight.value && hoveredTrafficLight.value.id === light.id
+    drawTrafficLight(light, isHovered)
+  })
+  
+  // 绘制停车场闸机
+  props.parkingGates.forEach(gate => {
+    const isHovered = hoveredParkingGate.value && hoveredParkingGate.value.id === gate.id
+    drawParkingGate(gate, isHovered)
+  })
 }
 
 /**
@@ -374,21 +642,71 @@ function drawVehicles() {
 }
 
 /**
+ * ✅ 检测点击是否命中交通灯
+ */
+function hitTestTrafficLight(x, y) {
+  const gridX = x / props.blockSize
+  const gridY = y / props.blockSize
+  
+  for (const light of props.trafficLights) {
+    const dx = Math.abs(gridX - light.x - 0.5)
+    const dy = Math.abs(gridY - light.y - 0.5)
+    if (dx < 0.8 && dy < 1.2) {
+      return light
+    }
+  }
+  return null
+}
+
+/**
+ * ✅ 检测点击是否命中停车场闸机
+ */
+function hitTestParkingGate(x, y) {
+  const gridX = x / props.blockSize
+  const gridY = y / props.blockSize
+  
+  for (const gate of props.parkingGates) {
+    const dx = Math.abs(gridX - gate.x - 0.5)
+    const dy = Math.abs(gridY - gate.y - 0.5)
+    if (dx < 1 && dy < 0.8) {
+      return gate
+    }
+  }
+  return null
+}
+
+/**
  * Canvas 点击事件
  */
 function handleCanvasClick(event) {
   const rect = canvasRef.value.getBoundingClientRect()
-  const x = Math.floor((event.clientX - rect.left) / props.blockSize)
-  const y = Math.floor((event.clientY - rect.top) / props.blockSize)
+  const clickX = event.clientX - rect.left
+  const clickY = event.clientY - rect.top
+  const x = Math.floor(clickX / props.blockSize)
+  const y = Math.floor(clickY / props.blockSize)
   
-  // ✅ 如果处于选择模式，发出选择事件
+  // 如果处于选择模式，发出选择事件
   if (props.selectMode) {
     emit('point-select', { x, y, type: props.selectMode })
     return
   }
   
-  const block = props.blocks.find(b => b.x === x && b.y === y)
+  // ✅ 检测是否点击了交通灯
+  const clickedLight = hitTestTrafficLight(clickX, clickY)
+  if (clickedLight) {
+    emit('traffic-light-click', clickedLight)
+    return
+  }
   
+  // ✅ 检测是否点击了停车场闸机
+  const clickedGate = hitTestParkingGate(clickX, clickY)
+  if (clickedGate) {
+    emit('parking-gate-click', clickedGate)
+    return
+  }
+  
+  // 检测地图块
+  const block = props.blocks.find(b => b.x === x && b.y === y)
   if (block) {
     emit('block-click', block)
   }
@@ -406,6 +724,37 @@ function handleCanvasMouseMove(event) {
   
   mousePos.value = { x: clientX, y: clientY }
   
+  // ✅ 检测交通灯悬停
+  const hitLight = hitTestTrafficLight(clientX, clientY)
+  if (hitLight) {
+    if (!hoveredTrafficLight.value || hoveredTrafficLight.value.id !== hitLight.id) {
+      hoveredTrafficLight.value = hitLight
+      hoveredBlock.value = null
+      hoveredParkingGate.value = null
+      drawOverlay()
+    }
+    return
+  } else if (hoveredTrafficLight.value) {
+    hoveredTrafficLight.value = null
+    drawOverlay()
+  }
+  
+  // ✅ 检测停车场闸机悬停
+  const hitGate = hitTestParkingGate(clientX, clientY)
+  if (hitGate) {
+    if (!hoveredParkingGate.value || hoveredParkingGate.value.id !== hitGate.id) {
+      hoveredParkingGate.value = hitGate
+      hoveredBlock.value = null
+      hoveredTrafficLight.value = null
+      drawOverlay()
+    }
+    return
+  } else if (hoveredParkingGate.value) {
+    hoveredParkingGate.value = null
+    drawOverlay()
+  }
+  
+  // 检测地图块悬停
   const block = props.blocks.find(b => b.x === x && b.y === y)
   
   if (block) {
@@ -432,6 +781,16 @@ function handleCanvasMouseLeave() {
     hoveredBlock.value = null
     drawAllBlocks()
   }
+  
+  if (hoveredTrafficLight.value) {
+    hoveredTrafficLight.value = null
+    drawOverlay()
+  }
+  
+  if (hoveredParkingGate.value) {
+    hoveredParkingGate.value = null
+    drawOverlay()
+  }
 }
 
 /**
@@ -457,6 +816,7 @@ function getBlockTypeName(type) {
  */
 function animate() {
   drawVehicles()
+  drawOverlay()  // ✅ 每帧更新交通灯和闸机
   
   frameCount++
   const now = Date.now()
@@ -475,10 +835,12 @@ function animate() {
 onMounted(() => {
   ctx = canvasRef.value?.getContext('2d')
   vehicleCtx = vehicleCanvasRef.value?.getContext('2d')
+  overlayCtx = overlayCanvasRef.value?.getContext('2d')  // ✅ 新增
   
-  if (ctx && vehicleCtx) {
+  if (ctx && vehicleCtx && overlayCtx) {
     ctx.imageSmoothingEnabled = true
     vehicleCtx.imageSmoothingEnabled = true
+    overlayCtx.imageSmoothingEnabled = true
     
     if (props.backgroundImage) {
       loadBackgroundImage(props.backgroundImage)
@@ -507,15 +869,25 @@ watch(() => props.vehicles, () => {
 
 watch(() => props.showDebug, () => {
   drawAllBlocks()
+  drawOverlay()
 })
 
 watch(() => props.backgroundImage, (newUrl) => {
   loadBackgroundImage(newUrl)
 })
 
-// ✅ 监听高亮路径变化
 watch(() => props.highlightedPath, () => {
   drawAllBlocks()
+}, { deep: true })
+
+// ✅ 监听交通灯变化
+watch(() => props.trafficLights, () => {
+  drawOverlay()
+}, { deep: true })
+
+// ✅ 监听停车场闸机变化
+watch(() => props.parkingGates, () => {
+  drawOverlay()
 }, { deep: true })
 </script>
 
@@ -529,7 +901,8 @@ watch(() => props.highlightedPath, () => {
 }
 
 .map-canvas,
-.vehicle-canvas {
+.vehicle-canvas,
+.overlay-canvas {
   position: absolute;
   top: 0;
   left: 0;
@@ -542,6 +915,12 @@ watch(() => props.highlightedPath, () => {
 
 .vehicle-canvas {
   z-index: 2;
+  pointer-events: none;
+}
+
+/* ✅ 交通灯和闸机层 */
+.overlay-canvas {
+  z-index: 3;
   pointer-events: none;
 }
 
@@ -568,7 +947,16 @@ watch(() => props.highlightedPath, () => {
   font-size: 12px;
 }
 
-/* ✅ 选择模式提示 */
+/* ✅ 交通灯提示样式 */
+.traffic-light-tooltip h4 {
+  color: #f1c40f;
+}
+
+/* ✅ 停车场闸机提示样式 */
+.parking-gate-tooltip h4 {
+  color: #e67e22;
+}
+
 .select-mode-tip {
   position: absolute;
   top: 10px;
@@ -583,7 +971,6 @@ watch(() => props.highlightedPath, () => {
   50% { opacity: 0.7; }
 }
 
-/* ✅ 起点/终点标记 */
 .point-marker {
   position: absolute;
   z-index: 50;

@@ -92,6 +92,15 @@
               >
                 {{ isRealtimeEnabled ? '停止监控' : '开始监控' }}
               </el-button>
+
+              <!-- ✅ 调控红绿灯按钮 -->
+              <el-button 
+                type="success" 
+                @click="openTrafficLightControl"
+                :icon="Sunny"
+              >
+                调控红绿灯
+              </el-button>
               
               <!-- 车辆控制按钮 -->
               <el-button 
@@ -136,7 +145,7 @@
           >
             <template #title>
               <span>
-                🔴 实时监控中 | 
+                 实时监控中 | 
                 上次更新: {{ lastUpdateTimeDisplay }} | 
                 道路总数: {{ congestionSummary.totalRoads }} | 
                 畅通: {{ congestionSummary.smooth }} | 
@@ -199,9 +208,13 @@
                 :show-debug="showDebug"
                 :background-image="backgroundImage"
                 :highlighted-path="highlightedPath"
+                :traffic-lights="trafficLights"
+                :parking-gates="parkingGates"
                 @block-click="handleBlockClick"
                 @block-hover="handleBlockHover"
                 @vehicle-click="handleVehicleClick"
+                @traffic-light-click="handleTrafficLightClick"
+                @parking-gate-click="handleParkingGateClick"
               />
             </div>
           </el-card>
@@ -420,6 +433,153 @@
           {{ selectedBlock.data.name }}
         </el-descriptions-item>
       </el-descriptions>
+        </el-dialog>
+
+        <!-- ✅ 交通灯选择弹窗 -->
+    <el-dialog 
+      v-model="showTrafficLightControlDialog" 
+      title="选择交通灯"
+      width="600px"
+    >
+      <el-table :data="trafficLights" style="width: 100%">
+        <el-table-column prop="name" label="名称" min-width="120" />
+        <el-table-column prop="id" label="ID" width="120" />
+        <el-table-column label="位置" width="100">
+          <template #default="{ row }">
+            ({{ row.x }}, {{ row.y }})
+          </template>
+        </el-table-column>
+        <el-table-column prop="state" label="当前状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="getTrafficLightTagType(row.state)" effect="dark">
+              {{ getTrafficLightStateName(row.state) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="100">
+          <template #default="{ row }">
+            <el-button 
+              type="primary" 
+              size="small" 
+              @click="selectTrafficLightForControl(row)"
+            >
+              调控
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      
+      <template #footer>
+        <el-button @click="showTrafficLightControlDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- ✅ 交通灯调控弹窗 -->
+    <el-dialog 
+      v-model="showTrafficLightDialog" 
+      title="调控交通灯"
+      width="450px"
+    >
+      <el-descriptions :column="1" border v-if="selectedTrafficLight">
+        <el-descriptions-item label="名称">
+          {{ selectedTrafficLight.name }}
+        </el-descriptions-item>
+        <el-descriptions-item label="位置">
+          ({{ selectedTrafficLight.x }}, {{ selectedTrafficLight.y }})
+        </el-descriptions-item>
+        <el-descriptions-item label="所属道路">
+          {{ selectedTrafficLight.roadId || '-' }}
+        </el-descriptions-item>
+      </el-descriptions>
+      
+      <el-divider>设置状态</el-divider>
+      
+      <el-form :model="trafficLightForm" label-width="100px">
+        <el-form-item label="灯光状态">
+          <el-radio-group v-model="trafficLightForm.state" size="large">
+            <el-radio-button value="RED">
+              <span style="color: #e74c3c;">🔴 红灯</span>
+            </el-radio-button>
+            <el-radio-button value="YELLOW">
+              <span style="color: #f1c40f;">🟡 黄灯</span>
+            </el-radio-button>
+            <el-radio-button value="GREEN">
+              <span style="color: #27ae60;">🟢 绿灯</span>
+            </el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        
+        <el-form-item label="持续时间">
+          <el-input-number 
+            v-model="trafficLightForm.duration" 
+            :min="5" 
+            :max="300" 
+            :step="5"
+          />
+          <span style="margin-left: 10px; color: #999;">秒</span>
+        </el-form-item>
+      </el-form>
+      
+      <template #footer>
+        <el-button @click="showTrafficLightDialog = false">取消</el-button>
+        <el-button type="primary" @click="updateTrafficLightState">
+          确认更新
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- ✅ 停车场闸机控制弹窗 -->
+    <el-dialog 
+      v-model="showParkingGateDialog" 
+      title="控制停车场闸机"
+      width="450px"
+    >
+      <el-descriptions :column="1" border v-if="selectedParkingGate">
+        <el-descriptions-item label="名称">
+          {{ selectedParkingGate.name }}
+        </el-descriptions-item>
+        <el-descriptions-item label="位置">
+          ({{ selectedParkingGate.x }}, {{ selectedParkingGate.y }})
+        </el-descriptions-item>
+        <el-descriptions-item label="所属停车场">
+          {{ selectedParkingGate.parkingLotId || '-' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="当前状态">
+          <el-tag :type="getParkingGateTagType(selectedParkingGate.state)" effect="dark" size="large">
+            {{ getParkingGateStateName(selectedParkingGate.state) }}
+          </el-tag>
+        </el-descriptions-item>
+      </el-descriptions>
+      
+      <el-divider>操作</el-divider>
+      
+      <div style="display: flex; justify-content: center; gap: 20px;">
+        <el-button 
+          type="success" 
+          size="large"
+          :disabled="selectedParkingGate?.state === 'OPEN' || selectedParkingGate?.state === 'OPENING'"
+          @click="controlParkingGate('OPEN')"
+          style="width: 120px;"
+        >
+          <el-icon><Unlock /></el-icon>
+          开启闸机
+        </el-button>
+        
+        <el-button 
+          type="danger" 
+          size="large"
+          :disabled="selectedParkingGate?.state === 'CLOSED' || selectedParkingGate?.state === 'CLOSING'"
+          @click="controlParkingGate('CLOSE')"
+          style="width: 120px;"
+        >
+          <el-icon><Lock /></el-icon>
+          关闭闸机
+        </el-button>
+      </div>
+      
+      <template #footer>
+        <el-button @click="showParkingGateDialog = false">关闭</el-button>
+      </template>
     </el-dialog>
 
     <!-- 车辆信息弹窗 -->
@@ -533,12 +693,14 @@ import { ElMessage } from 'element-plus'
 import {
   Monitor, DataAnalysis, Setting, Back, User, ArrowDown, SwitchButton,
   Location, View, Hide, Refresh, RefreshLeft, Grid, Promotion, WarningFilled, Warning, Check, Van,
-  Cpu, VideoPlay, VideoPause
+  Cpu, VideoPlay, VideoPause,  Sunny,  Lock,  Unlock
 } from '@element-plus/icons-vue'
 import CanvasMapContainer from '../components/map/CanvasMapContainer.vue'
 import mapApi from '../api/map'
 import roadApi from '../api/road'
 import mapBg from '@/assets/bgi.png'
+import trafficApi from '../api/traffic'  // ✅ 新增
+import parkingApi from '../api/parking'
 
 const router = useRouter()
 
@@ -546,9 +708,9 @@ const router = useRouter()
 const currentTab = ref('overview')
 
 // 地图配置
-const mapWidth = ref(160)
-const mapHeight = ref(160)
-const blockSize = ref(4)
+const mapWidth = ref(120)
+const mapHeight = ref(120)
+const blockSize = ref(5)
 const showDebug = ref(false)
 const backgroundImage = ref(mapBg)
 
@@ -579,6 +741,24 @@ const showVehicleDialog = ref(false)
 
 // ✅ 高亮路径
 const highlightedPath = ref([])
+
+const trafficLights = ref([])
+const showTrafficLightDialog = ref(false)
+const selectedTrafficLight = ref(null)
+const trafficLightForm = ref({
+  state: 'RED',
+  duration: 30
+})
+let trafficLightTimer = null
+
+// ✅ 停车场闸机相关
+const parkingGates = ref([])
+const showParkingGateDialog = ref(false)
+const selectedParkingGate = ref(null)
+let parkingGateTimer = null
+
+// ✅ 交通灯控制弹窗（选择列表）
+const showTrafficLightControlDialog = ref(false)
 
 // ✅ 实时监控相关
 let congestionUpdateTimer = null
@@ -1160,17 +1340,17 @@ const initMap = () => {
   mapBlocks.value = []
 }
 
-/**
- * 重置/清空地图
- */
-const resetMap = () => {
-  initMap()
-  vehicles.value = []
-  highlightedPath.value = []
-  stopRealtimeUpdate()
-  roadCongestionList.value = []
-  ElMessage.success('地图已清空')
-}
+// /**
+//  * 重置/清空地图
+//  */
+// const resetMap = () => {
+//   initMap()
+//   vehicles.value = []
+//   highlightedPath.value = []
+//   stopRealtimeUpdate()
+//   roadCongestionList.value = []
+//   ElMessage.success('地图已清空')
+// }
 
 /**
  * 应用地图设置
@@ -1239,6 +1419,266 @@ const getBlockTagType = (type) => {
   }
   return types[type] || 'info'
 }
+
+// ============ ✅ 交通灯相关方法 ============
+
+/**
+ * 获取所有交通灯
+ */
+const fetchTrafficLights = async () => {
+  try {
+    console.log('🚦 获取交通灯数据...')
+    const data = await trafficApi.getAll()
+    trafficLights.value = data || []
+    console.log(`✅ 获取到 ${trafficLights.value.length} 个交通灯`)
+  } catch (error) {
+    console.error('❌ 获取交通灯失败:', error)
+  }
+}
+
+/**
+ * 开始交通灯轮询
+ */
+const startTrafficLightPolling = () => {
+  if (trafficLightTimer) return
+  
+  fetchTrafficLights()
+  trafficLightTimer = setInterval(() => {
+    fetchTrafficLights()
+  }, 3000)  // 每3秒刷新
+  
+  console.log('🚦 开始交通灯状态轮询（每3秒）')
+}
+
+/**
+ * 停止交通灯轮询
+ */
+const stopTrafficLightPolling = () => {
+  if (trafficLightTimer) {
+    clearInterval(trafficLightTimer)
+    trafficLightTimer = null
+    console.log('🚦 停止交通灯状态轮询')
+  }
+}
+
+/**
+ * 打开交通灯控制弹窗
+ */
+const openTrafficLightControl = () => {
+  showTrafficLightControlDialog.value = true
+}
+
+/**
+ * 处理交通灯点击（从地图）
+ */
+const handleTrafficLightClick = (light) => {
+  selectedTrafficLight.value = light
+  trafficLightForm.value = {
+    state: light.state,
+    duration: light.duration
+  }
+  showTrafficLightDialog.value = true
+}
+
+/**
+ * 选择交通灯进行控制
+ */
+const selectTrafficLightForControl = (light) => {
+  selectedTrafficLight.value = light
+  trafficLightForm.value = {
+    state: light.state,
+    duration: light.duration
+  }
+  showTrafficLightControlDialog.value = false
+  showTrafficLightDialog.value = true
+}
+
+/**
+ * 更新交通灯状态
+ */
+const updateTrafficLightState = async () => {
+  if (!selectedTrafficLight.value) return
+  
+  try {
+    await trafficApi.updateState(selectedTrafficLight.value.id, {
+      state: trafficLightForm.value.state,
+      duration: trafficLightForm.value.duration
+    })
+    
+    ElMessage.success(`交通灯 "${selectedTrafficLight.value.name}" 已更新为 ${getTrafficLightStateName(trafficLightForm.value.state)}`)
+    
+    // 更新本地数据
+    const index = trafficLights.value.findIndex(l => l.id === selectedTrafficLight.value.id)
+    if (index !== -1) {
+      trafficLights.value[index] = {
+        ...trafficLights.value[index],
+        state: trafficLightForm.value.state,
+        duration: trafficLightForm.value.duration
+      }
+    }
+    
+    showTrafficLightDialog.value = false
+  } catch (error) {
+    console.error('❌ 更新交通灯失败:', error)
+    ElMessage.error('更新交通灯失败')
+  }
+}
+
+/**
+ * 获取交通灯状态名称
+ */
+const getTrafficLightStateName = (state) => {
+  const names = {
+    RED: '红灯',
+    YELLOW: '黄灯',
+    GREEN: '绿灯'
+  }
+  return names[state] || state
+}
+
+/**
+ * 获取交通灯状态标签类型
+ */
+const getTrafficLightTagType = (state) => {
+  const types = {
+    RED: 'danger',
+    YELLOW: 'warning',
+    GREEN: 'success'
+  }
+  return types[state] || 'info'
+}
+
+// ============ ✅ 停车场闸机相关方法 ============
+
+/**
+ * 获取所有停车场闸机
+ */
+const fetchParkingGates = async () => {
+  try {
+    console.log('🚧 获取停车场闸机数据...')
+    const data = await parkingApi.getAll()
+    parkingGates.value = data || []
+    console.log(`✅ 获取到 ${parkingGates.value.length} 个停车场闸机`)
+  } catch (error) {
+    console.error('❌ 获取停车场闸机失败:', error)
+  }
+}
+
+/**
+ * 开始停车场闸机轮询
+ */
+const startParkingGatePolling = () => {
+  if (parkingGateTimer) return
+  
+  fetchParkingGates()
+  parkingGateTimer = setInterval(() => {
+    fetchParkingGates()
+  }, 3000)
+  
+  console.log('🚧 开始停车场闸机状态轮询（每3秒）')
+}
+
+/**
+ * 停止停车场闸机轮询
+ */
+const stopParkingGatePolling = () => {
+  if (parkingGateTimer) {
+    clearInterval(parkingGateTimer)
+    parkingGateTimer = null
+    console.log('🚧 停止停车场闸机状态轮询')
+  }
+}
+
+/**
+ * 处理停车场闸机点击
+ */
+const handleParkingGateClick = (gate) => {
+  selectedParkingGate.value = gate
+  showParkingGateDialog.value = true
+}
+
+/**
+ * 控制停车场闸机
+ */
+const controlParkingGate = async (action) => {
+  if (!selectedParkingGate.value) return
+  
+  try {
+    await parkingApi.control(selectedParkingGate.value.id, action)
+    
+    ElMessage.success(`闸机 "${selectedParkingGate.value.name}" ${action === 'OPEN' ? '正在开启' : '正在关闭'}`)
+    
+    // 刷新数据
+    await fetchParkingGates()
+    
+    // 更新选中的闸机
+    const updated = parkingGates.value.find(g => g.id === selectedParkingGate.value.id)
+    if (updated) {
+      selectedParkingGate.value = updated
+    }
+  } catch (error) {
+    console.error('❌ 控制闸机失败:', error)
+    ElMessage.error('控制闸机失败')
+  }
+}
+
+/**
+ * 获取闸机状态名称
+ */
+const getParkingGateStateName = (state) => {
+  const names = {
+    OPEN: '已开启',
+    CLOSED: '已关闭',
+    OPENING: '正在开启',
+    CLOSING: '正在关闭'
+  }
+  return names[state] || state
+}
+
+/**
+ * 获取闸机状态标签类型
+ */
+const getParkingGateTagType = (state) => {
+  const types = {
+    OPEN: 'success',
+    CLOSED: 'danger',
+    OPENING: 'warning',
+    CLOSING: 'warning'
+  }
+  return types[state] || 'info'
+}
+
+// ============ 修改生命周期钩子 ============
+
+onMounted(() => {
+  ElMessage.success('欢迎使用管理者控制台')
+  loadMapData()
+  startRealtimeUpdate()
+  startTrafficLightPolling()  // ✅ 新增
+  startParkingGatePolling()   // ✅ 新增
+})
+
+onUnmounted(() => {
+  stopRealtimeUpdate()
+  stopTrafficLightPolling()   // ✅ 新增
+  stopParkingGatePolling()    // ✅ 新增
+})
+
+// ============ 修改重置地图方法 ============
+
+const resetMap = () => {
+  initMap()
+  vehicles.value = []
+  highlightedPath.value = []
+  trafficLights.value = []    // ✅ 新增
+  parkingGates.value = []     // ✅ 新增
+  stopRealtimeUpdate()
+  stopTrafficLightPolling()   // ✅ 新增
+  stopParkingGatePolling()    // ✅ 新增
+  roadCongestionList.value = []
+  ElMessage.success('地图已清空')
+}
+
 
 /**
  * 计算交通统计
